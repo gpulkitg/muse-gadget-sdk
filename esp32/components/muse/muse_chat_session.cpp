@@ -63,6 +63,7 @@
 #include "freertos/stream_buffer.h"
 #include "freertos/task.h"
 #include "lwip/inet.h"
+#include "mbedtls/base64.h"
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
 
@@ -1515,6 +1516,64 @@ static void tts_data(const uint8_t *data, size_t len);
 #if CONFIG_MUSE_TTS_ELEVENLABS
 static bool elevenlabs_fetch(const char *text);
 #endif
+#if CONFIG_MUSE_TTS_SARVAM
+static bool sarvam_fetch(const char *text);
+
+/* Devanagari (U+0900-U+097F) in UTF-8 starts E0 A4/A5: Hindi replies route to Sarvam. */
+static bool has_devanagari(const char *text)
+{
+    for (const uint8_t *p = reinterpret_cast<const uint8_t *>(text); p[0] && p[1]; p++) {
+        if (p[0] == 0xE0 && (p[1] == 0xA4 || p[1] == 0xA5)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * Hinglish: Hindi in Latin letters, which is how Muse usually answers
+ * Hindi speech (the server transcription anglicises the note first).
+ * Two or more unambiguous Hindi words route the reply to Sarvam; the
+ * list avoids words English also uses (main, par is a stretch but kept
+ * rare in prose), so plain English stays with ElevenLabs.
+ */
+static bool looks_hinglish(const char *text)
+{
+    static const char *const words[] = {
+        "aaj", "aap", "aapka", "abhi", "accha", "achha", "aur", "batao", "bahut", "bhi",
+        "bohot", "chahiye", "chalo", "dekho", "gaya", "gayi", "hai", "hain", "hoga", "hogi",
+        "iska", "kabhi", "kaisa", "kaisi", "kaise", "kal", "kaun", "kya", "kyun", "kyunki",
+        "lagta", "lagti", "lekin", "magar", "matlab", "mera", "mere", "meri", "mujhe", "nahi",
+        "nahin", "raha", "rahe", "rahi", "samajh", "suno", "theek", "thik", "tum", "tumhara",
+        "uska", "wala", "wale", "wali",
+    };
+    int hits = 0;
+    const char *p = text;
+    while (*p) {
+        while (*p && !isalpha((uint8_t)*p)) {
+            p++;
+        }
+        char word[16];
+        size_t n = 0;
+        while (*p && isalpha((uint8_t)*p)) {
+            if (n < sizeof(word) - 1) {
+                word[n++] = tolower((uint8_t)*p);
+            }
+            p++;
+        }
+        word[n] = '\0';
+        if (n < 3) {
+            continue;
+        }
+        for (const char *w : words) {
+            if (strcmp(word, w) == 0 && ++hits >= 2) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+#endif
 
 /* Speaker off (or no speech fetched): silence paces the captions. */
 static void start_silent(msg_t &m, int i)
@@ -1538,16 +1597,36 @@ static void start_tts(void)
         if (m.tts != TTS_QUEUED) {
             continue;
         }
-#if CONFIG_MUSE_TTS_ELEVENLABS
+#if CONFIG_MUSE_TTS_ELEVENLABS || CONFIG_MUSE_TTS_SARVAM
         /*
-         * Speak the reply with ElevenLabs: the message's text (s_turn.texts
-         * + i * TEXT_MAX, up to TEXT_MAX - 1 bytes) goes to the TTS API and
-         * the MP3 it returns is passed to tts_data() as it arrives on this
-         * task. decode() then plays it at the speaker's volume, captions
-         * following, and finishes the message once it has drained. Any
-         * failure (no key, speaker off, HTTP error) falls back to silence.
+         * Speak the reply: the message's text (s_turn.texts + i * TEXT_MAX,
+         * up to TEXT_MAX - 1 bytes) goes to a TTS API and the MP3 it returns
+         * is passed to tts_data() as it arrives on this task. decode() then
+         * plays it at the speaker's volume, captions following, and finishes
+         * the message once it has drained. Devanagari replies go to Sarvam
+         * (hi-IN) when it is enabled; everything else goes to ElevenLabs,
+         * or to Sarvam when ElevenLabs is off. Any failure (no key, speaker
+         * off, HTTP error) falls back to silence.
          */
-        if (CONFIG_MUSE_TTS_API_KEY[0] && muse_settings_speaker_on() && s_turn.texts) {
+        bool (*fetch)(const char *) = nullptr;
+        const char *reply_text = s_turn.texts ? s_turn.texts + i * TEXT_MAX : nullptr;
+#if CONFIG_MUSE_TTS_SARVAM
+        if (reply_text && CONFIG_MUSE_TTS_SARVAM_API_KEY[0] &&
+            (has_devanagari(reply_text) || looks_hinglish(reply_text))) {
+            fetch = sarvam_fetch;
+        }
+#endif
+#if CONFIG_MUSE_TTS_ELEVENLABS
+        if (!fetch && CONFIG_MUSE_TTS_API_KEY[0]) {
+            fetch = elevenlabs_fetch;
+        }
+#endif
+#if CONFIG_MUSE_TTS_SARVAM
+        if (!fetch && CONFIG_MUSE_TTS_SARVAM_API_KEY[0]) {
+            fetch = sarvam_fetch;
+        }
+#endif
+        if (fetch && muse_settings_speaker_on() && reply_text) {
             m.tts = TTS_ACTIVE;
             s_turn.tts_msg = i;
             s_turn.silent = false;
@@ -1561,7 +1640,7 @@ static void start_tts(void)
             mark(M_TTS);
             ESP_LOGI(TAG, "speaking message %s (%u chars)", m.id, (unsigned)m.len);
             show_reply_start(m);
-            if (elevenlabs_fetch(s_turn.texts + i * TEXT_MAX)) {
+            if (fetch(reply_text)) {
                 s_turn.mp3_ended = true;   /* decode() drains the rest, then finishes */
             } else {
                 ESP_LOGW(TAG, "TTS fetch failed; showing message %s silently", m.id);
@@ -1699,6 +1778,191 @@ static bool elevenlabs_fetch(const char *text)
     }
     ESP_LOGI(TAG, "ElevenLabs TTS: %u bytes of MP3", (unsigned)s_turn.mp3_len);
     return s_turn.mp3_len > 0;
+}
+#endif
+
+#if CONFIG_MUSE_TTS_SARVAM
+/*
+ * Sarvam is served under Amazon Root CA 1 (leaf <- Amazon RSA 2048 M01).
+ * Pin that root for these calls, as with ElevenLabs' GTS root above.
+ * Amazon Root CA 1, self-signed, SHA-256 8E:CD:E6:88:4F:3D:87:B1:12:5B:
+ * A3:1A:C3:FC:B1:3D:70:16:DE:7F:57:CC:90:4F:E1:CB:97:C6:AE:98:19:6E
+ * (from amazontrust.com).
+ */
+static const char SARVAM_CA_PEM[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF\n"
+    "ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6\n"
+    "b24gUm9vdCBDQSAxMB4XDTE1MDUyNjAwMDAwMFoXDTM4MDExNzAwMDAwMFowOTEL\n"
+    "MAkGA1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJv\n"
+    "b3QgQ0EgMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJ4gHHKeNXj\n"
+    "ca9HgFB0fW7Y14h29Jlo91ghYPl0hAEvrAIthtOgQ3pOsqTQNroBvo3bSMgHFzZM\n"
+    "9O6II8c+6zf1tRn4SWiw3te5djgdYZ6k/oI2peVKVuRF4fn9tBb6dNqcmzU5L/qw\n"
+    "IFAGbHrQgLKm+a/sRxmPUDgH3KKHOVj4utWp+UhnMJbulHheb4mjUcAwhmahRWa6\n"
+    "VOujw5H5SNz/0egwLX0tdHA114gk957EWW67c4cX8jJGKLhD+rcdqsq08p8kDi1L\n"
+    "93FcXmn/6pUCyziKrlA4b9v7LWIbxcceVOF34GfID5yHI9Y/QCB/IIDEgEw+OyQm\n"
+    "jgSubJrIqg0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMC\n"
+    "AYYwHQYDVR0OBBYEFIQYzIU07LwMlJQuCFmcx7IQTgoIMA0GCSqGSIb3DQEBCwUA\n"
+    "A4IBAQCY8jdaQZChGsV2USggNiMOruYou6r4lK5IpDB/G/wkjUu0yKGX9rbxenDI\n"
+    "U5PMCCjjmCXPI6T53iHTfIUJrU6adTrCC2qJeHZERxhlbI1Bjjt/msv0tadQ1wUs\n"
+    "N+gDS63pYaACbvXy8MWy7Vu33PqUXHeeE6V/Uq2V8viTO96LXFvKWlJbYK8U90vv\n"
+    "o/ufQJVtMVT8QtPHRh8jrdkPSHCa2XV4cdFyQzR1bldZwgJcJmApzyMZFo6IQ6XU\n"
+    "5MsI+yMRQ+hDKXJioaldXgjUkK642M4UwtBV8ob2xJNDd2ZhwLnoQdeXeGADbkpy\n"
+    "rqXRfboQnoZsG4q5WTP468SQvvG5\n"
+    "-----END CERTIFICATE-----\n";
+
+/* A Sarvam REST response: JSON holding base64 audio, buffered whole. */
+struct sarvam_resp_t {
+    char *buf;
+    size_t len, cap;
+    bool overflow;
+};
+
+static esp_err_t on_sarvam_http(esp_http_client_event_t *evt)
+{
+    auto *r = static_cast<sarvam_resp_t *>(evt->user_data);
+    if (evt->event_id != HTTP_EVENT_ON_DATA || evt->data_len <= 0 || r->overflow) {
+        return ESP_OK;
+    }
+    if (r->len + evt->data_len + 1 > r->cap) {
+        size_t cap = r->cap ? r->cap : 64 * 1024;
+        while (cap < r->len + evt->data_len + 1) {
+            cap *= 2;
+        }
+        if (cap > 2 * 1024 * 1024) {
+            r->overflow = true;
+            return ESP_OK;
+        }
+        char *grown = static_cast<char *>(heap_caps_realloc(r->buf, cap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!grown) {
+            r->overflow = true;
+            return ESP_OK;
+        }
+        r->buf = grown;
+        r->cap = cap;
+    }
+    memcpy(r->buf + r->len, evt->data, evt->data_len);
+    r->len += evt->data_len;
+    r->buf[r->len] = '\0';
+    return ESP_OK;
+}
+
+/* One Sarvam request for one chunk of text; decoded MP3 goes to tts_data(). */
+static bool sarvam_post(const char *text)
+{
+    cJSON *body = cJSON_CreateObject();
+    if (!body) {
+        return false;
+    }
+    cJSON_AddStringToObject(body, "text", text);
+    cJSON_AddStringToObject(body, "target_language_code", "hi-IN");
+    cJSON_AddStringToObject(body, "speaker", CONFIG_MUSE_TTS_SARVAM_SPEAKER);
+    cJSON_AddStringToObject(body, "model", CONFIG_MUSE_TTS_SARVAM_MODEL);
+    cJSON_AddStringToObject(body, "output_audio_codec", "mp3");
+    cJSON_AddNumberToObject(body, "speech_sample_rate", 22050);
+    char *json = cJSON_PrintUnformatted(body);
+    cJSON_Delete(body);
+    if (!json) {
+        return false;
+    }
+    sarvam_resp_t r = {};
+    esp_http_client_config_t cfg = {};
+    cfg.url = "https://api.sarvam.ai/text-to-speech";
+    cfg.method = HTTP_METHOD_POST;
+    cfg.timeout_ms = 30000;
+    cfg.buffer_size = 4096;
+    cfg.buffer_size_tx = 4096;
+    cfg.event_handler = on_sarvam_http;
+    cfg.user_data = &r;
+    cfg.cert_pem = SARVAM_CA_PEM;
+    cfg.addr_type = HTTP_ADDR_TYPE_INET;
+    esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    if (!c) {
+        heap_caps_free(json);
+        return false;
+    }
+    esp_http_client_set_header(c, "api-subscription-key", CONFIG_MUSE_TTS_SARVAM_API_KEY);
+    esp_http_client_set_header(c, "Content-Type", "application/json");
+    esp_http_client_set_post_field(c, json, strlen(json));
+    esp_err_t err = esp_http_client_perform(c);
+    int status = esp_http_client_get_status_code(c);
+    esp_http_client_cleanup(c);
+    heap_caps_free(json);
+    if (err != ESP_OK || status != 200 || r.overflow || !r.buf) {
+        ESP_LOGW(TAG, "Sarvam TTS failed: %s (HTTP %d)", esp_err_to_name(err), status);
+        heap_caps_free(r.buf);
+        return false;
+    }
+    cJSON *root = cJSON_ParseWithLength(r.buf, r.len);
+    heap_caps_free(r.buf);
+    const char *b64 = root ? cJSON_GetStringValue(cJSON_GetArrayItem(cJSON_GetObjectItem(root, "audios"), 0)) : nullptr;
+    bool ok = false;
+    if (b64) {
+        size_t b64_len = strlen(b64);
+        uint8_t *mp3 = static_cast<uint8_t *>(heap_caps_malloc(b64_len * 3 / 4 + 4, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (mp3) {
+            size_t mp3_len = 0;
+            if (mbedtls_base64_decode(mp3, b64_len * 3 / 4 + 4, &mp3_len, reinterpret_cast<const uint8_t *>(b64),
+                                      b64_len) == 0 &&
+                mp3_len > 0) {
+                tts_data(mp3, mp3_len);
+                ok = true;
+            }
+            heap_caps_free(mp3);
+        }
+    } else {
+        ESP_LOGW(TAG, "Sarvam TTS: no audio in response");
+    }
+    cJSON_Delete(root);
+    return ok;
+}
+
+/*
+ * Sarvam caps one request at about 500 characters, and board replies run
+ * to TEXT_MAX - 1, so long text goes in sentence-sized chunks whose MP3
+ * streams append into the one reply buffer. Like elevenlabs_fetch, this
+ * runs blocking on the session task.
+ */
+static bool sarvam_fetch(const char *text)
+{
+    size_t total = strlen(text);
+    size_t off = 0;
+    bool any = false;
+    while (off < total) {
+        size_t n = total - off;
+        if (n > 450) {
+            n = 450;
+            /* Prefer a sentence end (., ?, !, or the Devanagari danda
+             * E0 A5 A4) inside the window; never split a UTF-8 sequence. */
+            size_t split = 0;
+            for (size_t k = 24; k < n; k++) {
+                const uint8_t *p = reinterpret_cast<const uint8_t *>(text + off);
+                if (p[k] == '.' || p[k] == '?' || p[k] == '!' ||
+                    (p[k] == 0xE0 && p[k + 1] == 0xA5 && p[k + 2] == 0xA4)) {
+                    split = k + (p[k] == 0xE0 ? 3 : 1);
+                }
+            }
+            if (split) {
+                n = split;
+            }
+            while (((uint8_t)text[off + n] & 0xC0) == 0x80) {
+                n--;
+            }
+        }
+        char chunk[480];
+        memcpy(chunk, text + off, n);
+        chunk[n] = '\0';
+        if (!sarvam_post(chunk)) {
+            return any;   /* keep what earlier chunks fetched */
+        }
+        any = true;
+        off += n;
+        while (text[off] == ' ') {
+            off++;
+        }
+    }
+    ESP_LOGI(TAG, "Sarvam TTS: %u bytes of MP3", (unsigned)s_turn.mp3_len);
+    return any && s_turn.mp3_len > 0;
 }
 #endif
 

@@ -307,6 +307,42 @@ menu "Muse"
             The ElevenLabs model to request. eleven_flash_v2_5 favours
             low latency; eleven_multilingual_v2 favours quality.
 
+    config MUSE_TTS_SARVAM
+        bool "Speak Hindi replies with Sarvam TTS"
+        depends on MUSE_HATCH
+        default n
+        help
+            Replies containing Devanagari script, and Hinglish replies
+            (Hindi in Latin letters, two or more Hindi marker words),
+            are sent to the Sarvam text-to-speech API (POST
+            /text-to-speech, bulbul models, hi-IN) instead of
+            ElevenLabs, and the MP3 it returns is
+            played the same way. Other replies keep using ElevenLabs
+            when it is enabled, or Sarvam when it is not. Falls back to
+            silent captions on any failure. The API key is a secret:
+            set it in the build directory's sdkconfig only.
+
+    config MUSE_TTS_SARVAM_API_KEY
+        string "Sarvam API key (api-subscription-key)"
+        depends on MUSE_TTS_SARVAM
+        default ""
+
+    config MUSE_TTS_SARVAM_SPEAKER
+        string "Sarvam speaker"
+        depends on MUSE_TTS_SARVAM
+        default "kavya_hi_conversational"
+        help
+            A bulbul:v4-flash Hindi speaker. Speakers are tied to the
+            model; see Sarvam's voice list for the current roster.
+
+    config MUSE_TTS_SARVAM_MODEL
+        string "Sarvam model"
+        depends on MUSE_TTS_SARVAM
+        default "bulbul:v4-flash"
+        help
+            bulbul:v4-flash favours low latency; bulbul:v3 speakers
+            use different names (e.g. anushka).
+
     config MUSE_VIDEO
         bool "Video streaming from a phone to the display"
         depends on MUSE_ENABLED && SPIRAM && (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32S31)
