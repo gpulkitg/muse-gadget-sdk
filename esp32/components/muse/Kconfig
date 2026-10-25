@@ -374,6 +374,45 @@ endif
             (about 220 KB), which still covers a push-to-talk turn. Board
             overlays with 2 MB of PSRAM turn it on.
 
+    config MUSE_TTS_ELEVENLABS
+        bool "Speak replies with ElevenLabs TTS"
+        depends on MUSE_HATCH
+        default n
+        help
+            Each finished reply message is sent to the ElevenLabs
+            text-to-speech API (POST /v1/text-to-speech/<voice>) and the
+            MP3 it returns is played on the speaker, captions following.
+            The fetch runs on the chat session task and falls back to
+            silent, reading-paced captions when the API key is empty, the
+            speaker is off, or the request fails. The API key is a secret:
+            set it in the build directory's sdkconfig only, never in a
+            committed devices/ overlay.
+
+    config MUSE_TTS_API_KEY
+        string "ElevenLabs API key (xi-api-key)"
+        depends on MUSE_TTS_ELEVENLABS
+        default ""
+        help
+            Your ElevenLabs API key. Stored in the build sdkconfig like
+            the gadget SDK token; leave empty to keep captions silent.
+
+    config MUSE_TTS_VOICE_ID
+        string "ElevenLabs voice ID"
+        depends on MUSE_TTS_ELEVENLABS
+        default "21m00Tcm4TlvDq8ikWAM"
+        help
+            The voice to speak replies with. The default is the premade
+            voice Rachel; paste any voice ID from your ElevenLabs Voice
+            Library instead.
+
+    config MUSE_TTS_MODEL
+        string "ElevenLabs model ID"
+        depends on MUSE_TTS_ELEVENLABS
+        default "eleven_flash_v2_5"
+        help
+            The ElevenLabs model to request. eleven_flash_v2_5 favours
+            low latency; eleven_multilingual_v2 favours quality.
+
     config MUSE_VIDEO
         bool "Video streaming from a phone to the display"
         depends on MUSE_ENABLED && SPIRAM && (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32S31) && !MUSE_UI_FREEINK
