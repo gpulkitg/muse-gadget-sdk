@@ -201,7 +201,7 @@ static stream_t s_streams[MAX_STREAMS];
 
 /* ---- The current turn ---- */
 
-enum phase_t : uint8_t { P_IDLE, P_LISTEN, P_WAIT_FINAL, P_WAIT_REPLY };
+enum phase_t : uint8_t { P_IDLE, P_LISTEN, P_WAIT_FINAL, P_WAIT_REPLY, P_STT };
 
 enum tts_t : uint8_t { TTS_NONE, TTS_QUEUED, TTS_ACTIVE, TTS_FINISHED };
 
@@ -233,6 +233,11 @@ struct turn_t {
     uint8_t *chunk;          /* DICT_CHUNK_BYTES, plus the note's tail */
     size_t chunk_len;
     uint8_t *note;           /* NOTE_PART_BYTES of 16 kHz PCM waiting for base64 */
+#if CONFIG_MUSE_STT_SARVAM
+    uint8_t *audio;          /* NOTE_MAX_BYTES: the whole note, kept for Sarvam STT */
+    size_t audio_len;
+    bool stt;                /* this turn transcribes with Sarvam, not a Muse voice note */
+#endif
     size_t note_len;
     size_t pcm_bytes;        /* the note so far */
     size_t body_sent;
@@ -1005,11 +1010,17 @@ static bool turn_start(uint32_t gen, bool text)
     }
     uint8_t *chunk = s_turn.chunk, *mp3 = s_turn.mp3, *note = s_turn.note;
     char *texts = s_turn.texts;
+#if CONFIG_MUSE_STT_SARVAM
+    uint8_t *audio = s_turn.audio;
+#endif
     s_turn = turn_t{};
     s_turn.chunk = chunk;
     s_turn.mp3 = mp3;
     s_turn.note = note;
     s_turn.texts = texts;
+#if CONFIG_MUSE_STT_SARVAM
+    s_turn.audio = audio;
+#endif
     s_turn.gen = gen;
     s_turn.text = text;
     s_turn.tts_msg = -1;
@@ -1024,11 +1035,26 @@ static bool turn_start(uint32_t gen, bool text)
     return true;
 }
 
+#if CONFIG_MUSE_STT_SARVAM
+static bool record_local(void);
+static bool stt_turn_enabled(void)
+{
+    return CONFIG_MUSE_TTS_SARVAM_API_KEY[0] && s_turn.audio;
+}
+#endif
+
 static void turn_begin(uint32_t gen)
 {
     if (!turn_start(gen, false)) {
         return;
     }
+#if CONFIG_MUSE_STT_SARVAM
+    if (stt_turn_enabled()) {
+        s_turn.stt = true;
+        s_turn.phase = P_LISTEN;   /* kept on board; Sarvam transcribes at release */
+        return;
+    }
+#endif
     if (VOICE_NOTE) {
         if (!open_note()) {
             disconnect("chat open failed");
@@ -1966,6 +1992,164 @@ static bool sarvam_fetch(const char *text)
 }
 #endif
 
+#if CONFIG_MUSE_STT_SARVAM
+/* Writes a 44-byte WAV header for 16-bit PCM into out (data_len bytes of audio). */
+static void wav_header(uint8_t *out, uint32_t data_len)
+{
+    memcpy(out, "RIFF", 4);
+    uint32_t riff = 36 + data_len, rate = MIC_RATE, byte_rate = MIC_RATE * 2;
+    memcpy(out + 4, &riff, 4);
+    memcpy(out + 8, "WAVEfmt ", 8);
+    uint32_t sub1 = 16;
+    uint16_t fmt = 1, channels = 1, block = 2, bits = 16;
+    memcpy(out + 16, &sub1, 4);
+    memcpy(out + 20, &fmt, 2);
+    memcpy(out + 22, &channels, 2);
+    memcpy(out + 24, &rate, 4);
+    memcpy(out + 28, &byte_rate, 4);
+    memcpy(out + 32, &block, 2);
+    memcpy(out + 34, &bits, 2);
+    memcpy(out + 36, "data", 4);
+    memcpy(out + 40, &data_len, 4);
+}
+
+/*
+ * Uploads the retained note to Sarvam speech-to-text and returns the
+ * transcript (PSRAM, caller frees), or NULL on any failure. Blocking on
+ * the session task, like the TTS fetches.
+ */
+static char *sarvam_stt(void)
+{
+    static const char *boundary = "----museStt9f2c";
+    char head[512], tail[64];
+    int head_len = snprintf(head, sizeof(head),
+                            "--%s\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n%s\r\n"
+                            "--%s\r\nContent-Disposition: form-data; name=\"mode\"\r\n\r\n%s\r\n"
+                            "--%s\r\nContent-Disposition: form-data; name=\"language_code\"\r\n\r\nunknown\r\n"
+                            "--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.wav\"\r\n"
+                            "Content-Type: audio/wav\r\n\r\n",
+                            boundary, CONFIG_MUSE_STT_SARVAM_MODEL, boundary, CONFIG_MUSE_STT_SARVAM_MODE, boundary,
+                            boundary);
+    int tail_len = snprintf(tail, sizeof(tail), "\r\n--%s--\r\n", boundary);
+    size_t total = head_len + 44 + s_turn.audio_len + tail_len;
+    uint8_t *post = static_cast<uint8_t *>(heap_caps_malloc(total, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!post) {
+        return nullptr;
+    }
+    memcpy(post, head, head_len);
+    wav_header(post + head_len, s_turn.audio_len);
+    memcpy(post + head_len + 44, s_turn.audio, s_turn.audio_len);
+    memcpy(post + head_len + 44 + s_turn.audio_len, tail, tail_len);
+
+    sarvam_resp_t r = {};
+    esp_http_client_config_t cfg = {};
+    cfg.url = "https://api.sarvam.ai/speech-to-text";
+    cfg.method = HTTP_METHOD_POST;
+    cfg.timeout_ms = 45000;
+    cfg.buffer_size = 4096;
+    cfg.buffer_size_tx = 4096;
+    cfg.event_handler = on_sarvam_http;
+    cfg.user_data = &r;
+    cfg.cert_pem = SARVAM_CA_PEM;
+    cfg.addr_type = HTTP_ADDR_TYPE_INET;
+    esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    if (!c) {
+        heap_caps_free(post);
+        return nullptr;
+    }
+    char ctype[80];
+    snprintf(ctype, sizeof(ctype), "multipart/form-data; boundary=%s", boundary);
+    esp_http_client_set_header(c, "api-subscription-key", CONFIG_MUSE_TTS_SARVAM_API_KEY);
+    esp_http_client_set_header(c, "Content-Type", ctype);
+    esp_http_client_set_post_field(c, reinterpret_cast<const char *>(post), total);
+    esp_err_t err = esp_http_client_perform(c);
+    int status = esp_http_client_get_status_code(c);
+    esp_http_client_cleanup(c);
+    heap_caps_free(post);
+    if (err != ESP_OK || status != 200 || r.overflow || !r.buf) {
+        ESP_LOGW(TAG, "Sarvam STT failed: %s (HTTP %d)", esp_err_to_name(err), status);
+        heap_caps_free(r.buf);
+        return nullptr;
+    }
+    cJSON *root = cJSON_ParseWithLength(r.buf, r.len);
+    heap_caps_free(r.buf);
+    char *out = nullptr;
+    const char *text = root ? cJSON_GetStringValue(cJSON_GetObjectItem(root, "transcript")) : nullptr;
+    const char *lang = root ? cJSON_GetStringValue(cJSON_GetObjectItem(root, "language_code")) : nullptr;
+    if (text && text[0]) {
+        out = strdup(text);
+        ESP_LOGI(TAG, "Sarvam STT: lang=%s \"%s\"", lang ? lang : "?", out);
+    } else {
+        ESP_LOGW(TAG, "Sarvam STT: empty transcript");
+    }
+    cJSON_Delete(root);
+    return out;
+}
+
+/* STT failed: send the retained note the old way, as a Muse voice note. */
+static bool send_note_fallback(void)
+{
+    if (!open_note()) {
+        return false;
+    }
+    size_t off = 0;
+    while (off < s_turn.audio_len) {
+        size_t room = NOTE_PART_BYTES - s_turn.note_len;
+        size_t n = s_turn.audio_len - off < room ? s_turn.audio_len - off : room;
+        memcpy(s_turn.note + s_turn.note_len, s_turn.audio + off, n);
+        s_turn.note_len += n;
+        off += n;
+        if (s_turn.note_len == NOTE_PART_BYTES && !send_note_part(false)) {
+            return false;
+        }
+    }
+    s_turn.pcm_bytes = s_turn.audio_len;
+    if (!send_note_part(true)) {
+        return false;
+    }
+    ESP_LOGI(TAG, "voice note (STT fallback): %.2fs, %u byte request", (double)s_turn.audio_len / (MIC_RATE * 2),
+             (unsigned)s_turn.body_sent);
+    mark(M_SENT);
+    s_turn.chat_posted = true;
+    s_turn.chat_us = s_turn.last_event_us = now_us();
+    s_turn.phase = P_WAIT_REPLY;
+    return true;
+}
+
+/* Keeps the note on board; at release, Sarvam transcribes it for Muse. */
+static bool record_local(void)
+{
+    for (;;) {
+        size_t room = NOTE_MAX_BYTES - s_turn.audio_len;
+        size_t got = room ? xStreamBufferReceive(s_in, s_turn.audio + s_turn.audio_len, room, 0) : 0;
+        if (!got) {
+            break;
+        }
+        s_turn.audio_len += got;
+    }
+    if (!s_turn.end_requested && s_turn.audio_len < NOTE_MAX_BYTES) {
+        return true;
+    }
+    mark(M_RELEASE);
+    double secs = (double)s_turn.audio_len / (MIC_RATE * 2);
+    if (secs < 0.3) {
+        turn_fail("DIDN'T CATCH THAT");
+        return true;
+    }
+    s_turn.phase = P_STT;
+    char *transcript = sarvam_stt();
+    if (transcript) {
+        post_chat(transcript);
+        free(transcript);
+        return s_connected;
+    }
+    if (!send_note_fallback()) {
+        return false;
+    }
+    return true;
+}
+#endif
+
 static void tts_end(stream_t *s, bool ok)
 {
     int i = s->msg;
@@ -2400,7 +2584,11 @@ static void hatch_task(void *arg)
         }
         bool sent = true;
         if (s_turn.phase == P_LISTEN) {
+#if CONFIG_MUSE_STT_SARVAM
+            sent = s_turn.stt ? record_local() : (VOICE_NOTE ? record_note() : pump_mic());
+#else
             sent = VOICE_NOTE ? record_note() : pump_mic();
+#endif
         }
         if (!sent) {
             drop_connection("send failed");
@@ -2472,6 +2660,9 @@ extern "C" void muse_hatch_start(void)
     s_turn.chunk = static_cast<uint8_t *>(psram_alloc(DICT_CHUNK_BYTES + sizeof(MUSE_HATCH_NOTE_TAIL)));
     s_turn.mp3 = static_cast<uint8_t *>(psram_alloc(MP3_BUF));
     s_turn.note = VOICE_NOTE ? static_cast<uint8_t *>(psram_alloc(NOTE_PART_BYTES)) : nullptr;
+#if CONFIG_MUSE_STT_SARVAM
+    s_turn.audio = static_cast<uint8_t *>(psram_alloc(NOTE_MAX_BYTES));
+#endif
     s_turn.texts = static_cast<char *>(psram_alloc(MAX_MSGS * TEXT_MAX));   /* captions just stay untimed without it */
     s_pcm = static_cast<int16_t *>(psram_alloc(MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t)));
     s_pcm16 = static_cast<int16_t *>(psram_alloc((MINIMP3_MAX_SAMPLES_PER_FRAME + 8) * sizeof(int16_t)));

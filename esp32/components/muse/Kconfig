@@ -343,6 +343,33 @@ menu "Muse"
             bulbul:v4-flash favours low latency; bulbul:v3 speakers
             use different names (e.g. anushka).
 
+    config MUSE_STT_SARVAM
+        bool "Transcribe voice notes with Sarvam STT"
+        depends on MUSE_TTS_SARVAM
+        default n
+        help
+            Voice notes are kept on the board, uploaded to Sarvam
+            speech-to-text (POST /speech-to-text, WAV 16 kHz mono),
+            and the transcript goes to Muse as a text turn whose
+            reply is spoken as usual. Muse then sees Hindi/Hinglish
+            text instead of the server-side voice-note transcription.
+            On any STT failure the note falls back to the existing
+            voice-note path. Shares the Sarvam API key and CA with
+            MUSE_TTS_SARVAM.
+
+    config MUSE_STT_SARVAM_MODEL
+        string "Sarvam STT model"
+        depends on MUSE_STT_SARVAM
+        default "saaras:v4"
+
+    config MUSE_STT_SARVAM_MODE
+        string "Sarvam STT mode (transcribe or codemix)"
+        depends on MUSE_STT_SARVAM
+        default "transcribe"
+        help
+            transcribe gives native-script text (Devanagari for
+            Hindi); codemix keeps English words in Latin script.
+
     config MUSE_VIDEO
         bool "Video streaming from a phone to the display"
         depends on MUSE_ENABLED && SPIRAM && (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32S31)
