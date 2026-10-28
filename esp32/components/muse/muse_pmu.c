@@ -27,6 +27,7 @@ static const char *TAG = "muse_pmu";
 #define REG_STATUS2 0x01        /* bits[6:5] 01 = charging */
 #define REG_COMMON_CFG 0x10     /* bit0 = soft power-off */
 #define REG_IRQ_LEVEL 0x27      /* bits[3:2] power-key hold-to-off time */
+#define REG_FAST_PWRON 0x28     /* DCDC fast-start sequences; bits[1:0] DCDC1, POR 0b */
 #define REG_ADC_ENABLE 0x30     /* bit0 = battery voltage */
 #define REG_VBAT_H 0x34         /* bits[4:0]; 1 mV per count with REG_VBAT_L */
 #define REG_VBAT_L 0x35
@@ -98,6 +99,21 @@ esp_err_t muse_pmu_init(i2c_master_bus_handle_t bus, bool key_irqs)
     ESP_RETURN_ON_ERROR(wr(REG_ADC_ENABLE, v | 0x01), TAG, "enable battery voltage");
 
     ESP_LOGI(TAG, "AXP2101 ready (hardware PWR hold-off 10 s)");
+    return ESP_OK;
+}
+
+esp_err_t muse_pmu_set_power_on_2s(void)
+{
+    /* ONLEVEL (REG 0x27 bits[1:0]) is the power-on key time:
+     * 128 ms / 512 ms / 1 s / 2 s. Preserve IRQLEVEL and OFFLEVEL. */
+    uint8_t v;
+    ESP_RETURN_ON_ERROR(rd(REG_IRQ_LEVEL, &v), TAG, "read level times");
+    ESP_RETURN_ON_ERROR(wr(REG_IRQ_LEVEL, (v & ~0x03) | 0x03), TAG, "set on time");
+    /* An earlier build wrote REG 0x28 bits[1:0] by mistake (DCDC1 fast
+     * start); put them back at their POR default. */
+    ESP_RETURN_ON_ERROR(rd(REG_FAST_PWRON, &v), TAG, "read fast pwron");
+    ESP_RETURN_ON_ERROR(wr(REG_FAST_PWRON, v & ~0x03), TAG, "restore fast pwron");
+    ESP_LOGI(TAG, "power-on key time set to 2 s");
     return ESP_OK;
 }
 

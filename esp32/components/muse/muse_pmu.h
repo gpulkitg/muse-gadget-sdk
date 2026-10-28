@@ -38,6 +38,11 @@
  * PMU interrupt is turned off. */
 esp_err_t muse_pmu_init(i2c_master_bus_handle_t bus, bool key_irqs);
 
+/* Sets the AXP2101 power-on key time to 2 s (REG 0x27 ONLEVEL = 11b, the
+ * longest the chip offers: 128 ms / 512 ms / 1 s / 2 s). The PMU keeps
+ * the setting while it has power. Call after muse_pmu_init. */
+esp_err_t muse_pmu_set_power_on_2s(void);
+
 /* Turns off every rail but these, by their enable bits: dcdc has DCDC1-5 in
  * bits 0-4; ldo has ALDO1-4, BLDO1-2, CPUSLDO and DLDO1 in bits 0-7 and DLDO2
  * in bit 8. Turns nothing on. */

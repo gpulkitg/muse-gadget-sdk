@@ -496,7 +496,11 @@ static void build_button_icons(lv_obj_t *face)
         return;
     }
     s_aux_icon = make_label(face, s_small ? &lv_font_montserrat_14 : &lv_font_montserrat_28, COLOR_DIM);
-    lv_label_set_text(s_aux_icon, muse_board->touch ? LV_SYMBOL_POWER : LV_SYMBOL_LIST);
+    /* AXP-gesture boards: the BOOT button's primary role is settings and
+     * phone setup, so it gets the gear; other boards keep power/list. */
+    lv_label_set_text(s_aux_icon, muse_board->axp_button_gestures ? LV_SYMBOL_SETTINGS
+                                  : muse_board->touch             ? LV_SYMBOL_POWER
+                                                                  : LV_SYMBOL_LIST);
     lv_obj_align(s_aux_icon, a->align, a->x, a->y);
 }
 

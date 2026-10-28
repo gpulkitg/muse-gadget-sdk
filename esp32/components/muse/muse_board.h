@@ -97,6 +97,12 @@ typedef struct {
      * through a ~14 KB layer; set this where that's too much RAM (the C3) and
      * the hint lies flat on the menu's bar, left of the talk button's. */
     bool flat_menu_hints;
+    /* The talk button is the PMU power key (AXP button): phone-style
+     * gestures on it instead of push-to-talk - tap toggles the screen,
+     * double-tap records hands-free, a 3 s hold powers off; pairing
+     * confirm moves to the aux (BOOT) button. See axp_button() in
+     * muse_input.c. Off: legacy behaviour on both buttons. */
+    bool axp_button_gestures;
     int frame_ms;           /* face animation period */
     int avatar_px;          /* optional avatar canvas size; 0 uses the UI default */
 
