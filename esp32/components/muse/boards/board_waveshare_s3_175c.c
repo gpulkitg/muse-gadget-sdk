@@ -78,6 +78,12 @@ static esp_err_t init(void)
         ESP_LOGW(TAG, "PMU unavailable (%s): battery status disabled", esp_err_to_name(err));
         return ESP_OK;
     }
+#if !CONFIG_MUSE_BOARD_WAVESHARE_S3_175
+    /* AXP button gestures: power-on takes a deliberate 2 s hold. */
+    if (muse_pmu_set_power_on_2s() != ESP_OK) {
+        ESP_LOGW(TAG, "power-on key time left at chip default");
+    }
+#endif
     /* Only DCDC1 (VCC3V3) and ALDO1 (A3V3, for the codecs) feed anything; the
      * schematic leaves the rest unconnected. Waveshare's AXP2101 example and
      * xiaozhi's board turn them off too. */
@@ -263,7 +269,8 @@ static const muse_board_t s_board = {
 #else
     .talk_button = "top",
     .aux_button = "bottom",
-    /* Side buttons: PWR (talk) above BOOT (sleep/off), on the right. */
+    .axp_button_gestures = true,
+    /* Side buttons: AXP (power/screen/record) above BOOT (sleep/off), on the right. */
     .talk_hint = { LV_ALIGN_CENTER, 153, -129 },    /* 40 degrees above/below 3 o'clock */
     .aux_hint = { LV_ALIGN_CENTER, 153, 129 },
 #endif

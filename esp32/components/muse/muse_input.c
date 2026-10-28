@@ -73,6 +73,8 @@ static const char *TAG = "muse_input";
 #define GOODBYE_MS 1500        /* let the goodbye animation play */
 #define HINT_TICKS 60          /* 0.6 s: warn that holding powers off */
 #define LONG_TICKS 150         /* 1.5 s: power off */
+#define AXP_HINT_TICKS 100     /* 1 s: warn that holding powers off (AXP gestures) */
+#define AXP_LONG_TICKS 300     /* 3 s: power off (AXP gestures; BOOT hold there too) */
 #define SLEEP_CHECK_MS 100
 
 #define SERIAL_RX 1024         /* the driver drops what doesn't fit, so a console line must */
@@ -209,6 +211,10 @@ static void aux_button(bool pressed, bool edge)
         swallow = muse_state_asleep();
         if (swallow) {
             set_asleep(false, muse_board->aux_button);
+        } else if (muse_board->axp_button_gestures && muse_link_talk_press()) {
+            /* AXP-gesture boards: BOOT confirms pairing (see axp_button). */
+            muse_state_poke();
+            swallow = true;
         } else if (sleep_in) {
             sleep_in = 0;
             swallow = true;
@@ -226,7 +232,7 @@ static void aux_button(bool pressed, bool edge)
             muse_state_caption(saved_caption, sizeof(saved_caption), &v);
             muse_state_set_caption("HOLD TO POWER OFF");
             hinted = true;
-        } else if (held == LONG_TICKS) {
+        } else if (held == (muse_board->axp_button_gestures ? AXP_LONG_TICKS : LONG_TICKS)) {
             swallow = true;
             power_off();
         }
@@ -327,6 +333,83 @@ static void talk_button(unsigned ev)
     }
 #endif
     s_talk_down = talk_down;
+}
+
+/*
+ * AXP button (boards with axp_button_gestures): the PMU power key as a
+ * phone-style control, called every poll like aux_key. One press toggles
+ * the screen (a press from asleep only wakes), two quick presses record
+ * hands-free (one more press ends and sends; the voice layer's 15 s cap
+ * still applies), a 3 s hold powers off with a hint at 1 s and release
+ * cancels. Pairing confirm is not here: the BOOT button owns it there.
+ * Precedence: power-off hold > end-recording > double-press > screen.
+ */
+static bool s_handsfree;
+static void axp_button(bool pressed, bool edge)
+{
+    static int held, tap_in;
+    static bool swallow, hinted;
+    static char saved_caption[64];
+
+    if (tap_in && --tap_in == 0) {
+        set_asleep(true, muse_board->talk_button);   /* a lone press: screen off */
+    }
+    if (edge && pressed) {
+        held = 0;
+        hinted = false;
+        if (muse_state_asleep()) {
+            swallow = true;
+            set_asleep(false, muse_board->talk_button);
+        } else if (s_handsfree) {
+            s_handsfree = false;
+            swallow = true;
+            ESP_LOGI(TAG, "hands-free off");
+            post(MUSE_PTT_UP, false);
+        } else if (tap_in) {
+            tap_in = 0;
+            s_handsfree = true;
+            swallow = true;
+            muse_state_poke();
+            ESP_LOGI(TAG, "hands-free on");
+            post(MUSE_PTT_DOWN, false);
+        } else {
+            swallow = false;
+        }
+        return;
+    }
+    if (pressed && !swallow) {
+        if (s_handsfree) {
+            return;   /* latched: the next press ends it, handled above */
+        }
+        held++;
+        if (held == AXP_HINT_TICKS) {
+            if (!muse_board->power_off) {
+                return;   /* no hold to power off on this board */
+            }
+            uint32_t v = UINT32_MAX;
+            muse_state_caption(saved_caption, sizeof(saved_caption), &v);
+            muse_state_set_caption("HOLD TO POWER OFF\nDOUBLE TAP TO RECORD");
+            hinted = true;
+        } else if (held == AXP_LONG_TICKS) {
+            swallow = true;
+            power_off();
+        }
+        return;
+    }
+    if (edge && !pressed) {
+        bool was_swallow = swallow;
+        swallow = false;
+        held = 0;
+        if (was_swallow) {
+            return;
+        }
+        if (hinted) {
+            hinted = false;
+            muse_state_set_caption("%s", saved_caption);   /* let go early: cancel */
+        } else if (!s_handsfree) {
+            tap_in = DOUBLE_TICKS;   /* wait to see if a second press follows */
+        }
+    }
 }
 
 /* Keyboard menus don't repurpose Space/GO as Select. Navigation wakes the
@@ -592,7 +675,31 @@ static void input_task(void *arg)
             ev &= ~(presses | MUSE_BTN_POWER_LONG);
         }
 #endif
-        if (ev & (MUSE_BTN_TALK_PRESS | MUSE_BTN_TALK_RELEASE)) {
+        if (muse_board->axp_button_gestures) {
+            /* Polled like the aux key, so holds can be timed. */
+            static bool axp_down;
+            bool axp_press = ev & MUSE_BTN_TALK_PRESS;
+            bool axp_release = ev & MUSE_BTN_TALK_RELEASE;
+            bool axp_edge = false;
+            if (axp_down && axp_release) {
+                axp_down = false;
+                axp_release = false;
+                axp_edge = true;
+                axp_button(false, true);
+            }
+            if (!axp_down && axp_press) {
+                axp_down = axp_edge = true;
+                axp_button(true, true);
+                if (axp_release) {
+                    axp_down = false;
+                    axp_button(false, true);
+                }
+            }
+            if (!axp_edge) {
+                axp_button(axp_down, false);
+            }
+            s_talk_down = axp_down || s_handsfree;
+        } else if (ev & (MUSE_BTN_TALK_PRESS | MUSE_BTN_TALK_RELEASE)) {
             ESP_LOGI(TAG, "talk key:%s%s", ev & MUSE_BTN_TALK_PRESS ? " press" : "",
                      ev & MUSE_BTN_TALK_RELEASE ? " release" : "");
             talk_button(ev);
