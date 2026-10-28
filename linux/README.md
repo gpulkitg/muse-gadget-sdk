@@ -90,6 +90,12 @@ an active man-in-the-middle attack. Set it up on a network you trust.
 Commands run as the account you installed for, with exactly that account's
 permissions. If it can use sudo, so can Muse.
 
+The service runs at most four commands at once, including commands still running
+from a disconnected session. Disconnecting does not stop a command that already
+started; it keeps its slot until it returns. Queued commands from the old session
+are cancelled. Results from that session are not resent after reconnecting, and
+the service does not automatically retry those commands.
+
 Ask Muse things like:
 
 > What's using all the disk space on my Pi?
@@ -307,11 +313,23 @@ A few other ways to build on it:
 
 ```sh
 sudo musegadget info                     # name, node id, SDK token and pairing state
+sudo musegadget doctor                   # read-only setup and connectivity checks
 sudo systemctl status musegadget         # is it running?
 sudo journalctl -u musegadget -f         # follow the log
 sudo musegadget pair                     # pair again
 bash install.sh --uninstall              # remove it (add --purge to forget the pairing)
 ```
+
+`doctor` checks saved pairing credentials, SDK token format, the systemd
+service, Bluetooth controller power, and TCP connectivity to the default
+Muse API on port 443. Each check prints `OK`, `FAIL`, or `WARN` and a next
+step. It exits with code 1 if any check fails, or 0 otherwise. Bluetooth
+problems are warnings because Bluetooth is only needed for pairing.
+
+Run it on the gadget with sudo so it can read the root-owned state files.
+It never changes settings, starts services, opens pairing, or prints tokens.
+It does not validate credentials online or confirm a live Muse VM session;
+an active service and reachable API alone do not establish that connection.
 
 ## Develop
 
