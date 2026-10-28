@@ -21,6 +21,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "muse_state.h"
@@ -150,7 +151,33 @@ static bool next_line(const char **text, int cols, const char **start, size_t *l
  * byte `at` in `out`. Pages overlap by a line: a page's last line starts the
  * next one, so the page turns as that line is reached and nothing is skipped.
  */
+static bool caption_at_latin(const char *text, size_t at, char *out, size_t cap);
+
 bool muse_hatch_caption_at(const char *text, size_t at, char *out, size_t cap)
+{
+    /*
+     * Devanagari has no glyphs in the screen fonts: captions show its
+     * Hinglish transliteration, paged as Latin so the widths are right.
+     * The spoken text is untouched; this only rewrites the display copy.
+     * `at` is a byte offset in the original, so scale it across.
+     */
+    char *latin = NULL;
+    if (muse_text_has_devanagari(text)) {
+        size_t need = strlen(text) * 2 + 16;
+        latin = malloc(need);
+        if (latin) {
+            size_t latin_len = muse_text_to_hinglish(text, latin, need);
+            size_t orig_len = strlen(text);
+            at = orig_len ? at * latin_len / orig_len : 0;
+            text = latin;
+        }
+    }
+    bool ok = caption_at_latin(text, at, out, cap);
+    free(latin);
+    return ok;
+}
+
+static bool caption_at_latin(const char *text, size_t at, char *out, size_t cap)
 {
     int cols, lines;
     muse_state_page(muse_text_has_cjk(text), &cols, &lines);

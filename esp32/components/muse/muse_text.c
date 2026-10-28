@@ -265,6 +265,156 @@ void muse_text_to_ascii(char *s, size_t cap)
     }
 }
 
+bool muse_text_has_devanagari(const char *s)
+{
+    for (const unsigned char *p = (const unsigned char *)s; p[0] && p[1]; p++) {
+        if (p[0] == 0xE0 && (p[1] == 0xA4 || p[1] == 0xA5)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* A Devanagari consonant's stem (its sound with no vowel), or NULL. */
+static const char *deva_stem(int32_t cp)
+{
+    switch (cp) {
+    case 0x0915: return "k";   case 0x0916: return "kh";  case 0x0917: return "g";
+    case 0x0918: return "gh";  case 0x0919: return "ng";  case 0x091A: return "ch";
+    case 0x091B: return "chh"; case 0x091C: return "j";   case 0x091D: return "jh";
+    case 0x091E: return "ny";  case 0x091F: return "t";   case 0x0920: return "th";
+    case 0x0921: return "d";   case 0x0922: return "dh";  case 0x0923: return "n";
+    case 0x0924: return "t";   case 0x0925: return "th";  case 0x0926: return "d";
+    case 0x0927: return "dh";  case 0x0928: return "n";   case 0x092A: return "p";
+    case 0x092B: return "ph";  case 0x092C: return "b";   case 0x092D: return "bh";
+    case 0x092E: return "m";   case 0x092F: return "y";   case 0x0930: return "r";
+    case 0x0932: return "l";   case 0x0935: return "w";   case 0x0936: return "sh";
+    case 0x0937: return "sh";  case 0x0938: return "s";   case 0x0939: return "h";
+    case 0x0958: return "q";   case 0x0959: return "kh";  case 0x095A: return "g";
+    case 0x095B: return "z";   case 0x095C: return "r";   case 0x095D: return "rh";
+    case 0x095E: return "f";   case 0x095F: return "y";
+    default: return NULL;
+    }
+}
+
+/* A vowel sign's (matra's) vowel, or NULL if cp is not a vowel sign. */
+static const char *deva_matra(int32_t cp)
+{
+    switch (cp) {
+    case 0x093A: case 0x093B: return "o";
+    case 0x093E: return "a"; case 0x093F: return "i";  case 0x0940: return "ee";
+    case 0x0941: return "u";  case 0x0942: return "oo"; case 0x0943: return "ri";
+    case 0x0944: return "ree"; case 0x0945: case 0x0946: case 0x0947: return "e";
+    case 0x0948: return "ai"; case 0x0949: case 0x094A: return "o";
+    case 0x094B: return "o";  case 0x094C: return "au"; case 0x094E: case 0x094F: return "e";
+    case 0x0955: return "e";  case 0x0956: return "ai"; case 0x0957: return "o";
+    default: return NULL;
+    }
+}
+
+/* An independent vowel's sound, or NULL. */
+static const char *deva_vowel(int32_t cp)
+{
+    switch (cp) {
+    case 0x0905: return "a";  case 0x0906: return "aa"; case 0x0907: return "i";
+    case 0x0908: return "ee"; case 0x0909: return "u";  case 0x090A: return "oo";
+    case 0x090B: return "ri"; case 0x090C: return "li"; case 0x090D: case 0x090E:
+    case 0x090F: return "e";  case 0x0910: return "ai"; case 0x0911: case 0x0912:
+    case 0x0913: return "o";  case 0x0914: return "au";
+    default: return NULL;
+    }
+}
+
+size_t muse_text_to_hinglish(const char *in, char *out, size_t cap)
+{
+    size_t o = 0;
+    if (!cap) {
+        return 0;
+    }
+    const unsigned char *p = (const unsigned char *)in;
+    while (*p) {
+        size_t len;
+        int32_t cp = decode(p, &len);
+        const char *stem = cp >= 0 ? deva_stem(cp) : NULL;
+        if (!stem) {
+            const char *v = cp >= 0 ? deva_vowel(cp) : NULL;
+            const char *one = NULL;
+            char digit[2] = {};
+            if (v) {
+                one = v;
+            } else if (cp == 0x0901 || cp == 0x0902) {
+                one = "n";   /* chandrabindu, anusvara */
+            } else if (cp == 0x0903) {
+                one = "h";   /* visarga */
+            } else if (cp == 0x0964 || cp == 0x0965) {
+                one = ".";   /* danda */
+            } else if (cp >= 0x0966 && cp <= 0x096F) {
+                digit[0] = (char)('0' + cp - 0x0966);
+                digit[1] = '\0';
+                one = digit;
+            } else if (cp == 0x0950) {
+                one = "Om";
+            } else if (deva_matra(cp)) {
+                one = deva_matra(cp);   /* a sign with no consonant before it */
+            }
+            if (one) {
+                size_t n = strlen(one);
+                if (o + n >= cap) {
+                    break;
+                }
+                memcpy(out + o, one, n);
+                o += n;
+            } else if (cp < 0x0900 || cp > 0x097F) {
+                if (o + len >= cap) {
+                    break;
+                }
+                memcpy(out + o, p, len);   /* Latin, punctuation, English words: as is */
+                o += len;
+            }
+            /* Anything else in the block (virama, nukta, joiner signs) adds nothing alone. */
+            p += len;
+            continue;
+        }
+        /* Consonant: stem, then its vowel from what follows. */
+        size_t n = strlen(stem);
+        if (o + n + 4 >= cap) {
+            break;
+        }
+        memcpy(out + o, stem, n);
+        o += n;
+        p += len;
+        if (*p) {
+            size_t nlen;
+            int32_t next = decode(p, &nlen);
+            if (next == 0x093C) {
+                p += nlen;   /* nukta: the stem already covers the common forms */
+                if (*p) {
+                    next = decode(p, &nlen);
+                } else {
+                    next = -1;
+                }
+            }
+            const char *matra = next >= 0 ? deva_matra(next) : NULL;
+            if (next == 0x094D) {
+                p += nlen;   /* virama: no vowel */
+            } else if (matra) {
+                size_t m = strlen(matra);
+                memcpy(out + o, matra, m);
+                o += m;
+                p += nlen;
+            } else if (next == ' ' || next == '\n' || next == '.' || next == ',' || next == '!' ||
+                       next == '?' || next < 0) {
+                /* Word end: Hindi drops the inherent vowel. */
+            } else {
+                out[o++] = 'a';
+            }
+        }
+        /* End of text after a consonant: no inherent vowel either. */
+    }
+    out[o] = '\0';
+    return o;
+}
+
 const char *muse_text_showable(const char *text, char *buf, size_t cap)
 {
     const char *p = text;

@@ -431,6 +431,9 @@ static bool hatch_reply(bool *delivered)
     int64_t t0 = esp_timer_get_time();
     *delivered = false;
     for (;;) {
+        /* A turn in progress is activity: without this the idle timer
+         * (from the last press) blanks the screen mid-reply on long turns. */
+        muse_state_poke();
         muse_hatch_ev_t ev;
         while ((ev = muse_hatch_turn_event(text, sizeof(text))) != MUSE_HATCH_EV_NONE) {
             switch (ev) {

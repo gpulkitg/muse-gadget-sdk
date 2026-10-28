@@ -441,10 +441,12 @@ endif
     config MUSE_STT_SARVAM_MODE
         string "Sarvam STT mode (transcribe or codemix)"
         depends on MUSE_STT_SARVAM
-        default "transcribe"
+        default "codemix"
         help
-            transcribe gives native-script text (Devanagari for
-            Hindi); codemix keeps English words in Latin script.
+            codemix keeps English words in Latin script inside
+            native-script text, so names and terms survive ("मेरा
+            phone number है"); transcribe renders everything in the
+            native script, English names phonetically.
 
     config MUSE_VIDEO
         bool "Video streaming from a phone to the display"

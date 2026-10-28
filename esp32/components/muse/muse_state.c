@@ -117,6 +117,14 @@ void muse_state_set_caption(const char *fmt, ...)
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
     muse_text_to_ascii(buf, sizeof(buf));   /* replies have curly quotes and dashes */
+    if (muse_text_has_devanagari(buf)) {
+        /* No Devanagari in the screen fonts: show Hinglish instead. Captions
+         * paged by muse_hatch_caption_at arrive already transliterated; this
+         * covers captions set by any other path. */
+        static char latin[sizeof(s_caption) * 2];
+        muse_text_to_hinglish(buf, latin, sizeof(latin));
+        strlcpy(buf, latin, sizeof(buf));
+    }
 
     portENTER_CRITICAL(&s_lock);
     if (strcmp(buf, s_caption) != 0) {

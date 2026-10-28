@@ -118,7 +118,7 @@ static const char *TAG = "muse_chat_session";
 #define MP3_POLL_ROOM (SCRATCH + 8192)     /* stop reading the socket below this much MP3 room */
 static_assert(MP3_BUF > MP3_POLL_ROOM + MP3_HOLD, "reads would stall with the MP3 buffer empty");
 #define EV_TEXT 72
-#define TEXT_MAX 1024                      /* a message's text, for captions timed to its speech */
+#define TEXT_MAX 4096                      /* a message's text, for captions timed to its speech (PSRAM: MAX_MSGS of these) */
 #define SPEECH_CHARS_PER_S 14              /* until the speech's length is known */
 #define TEXT_CHARS_PER_S 16                /* speaker off: reading pace, a little over speech */
 #define TEXT_HOLD_S 2                      /* speaker off: how long a message's last lines stay up */
@@ -262,6 +262,7 @@ struct turn_t {
     /* TTS */
     int tts_msg;             /* message being fetched (or shown, speaker off), or -1 */
     bool silent;             /* speaker off: tts_msg is paced by silence, not fetched */
+    int64_t speech_us;       /* when reply audio last advanced: the turn cap spares a draining turn */
     uint8_t *mp3;            /* MP3_BUF */
     size_t mp3_len;
     bool mp3_ended;
@@ -1646,21 +1647,6 @@ static bool looks_hinglish(const char *text)
 }
 #endif
 
-/* Speaker off (or no speech fetched): silence paces the captions. */
-static void start_silent(msg_t &m, int i)
-{
-    m.pcm_start = s_turn.pcm_out;
-    /* Paced to the text kept: a reply longer than TEXT_MAX shows what was
-     * kept at reading pace, not stretched over the whole reply's time. */
-    size_t shown = s_turn.texts ? strlen(s_turn.texts + i * TEXT_MAX) : m.len;
-    m.pcm_frames = (uint32_t)(shown * MIC_RATE / TEXT_CHARS_PER_S);
-    m.tts = TTS_ACTIVE;
-    s_turn.tts_msg = i;
-    s_turn.silent = true;
-    ESP_LOGI(TAG, "showing message %s (%u chars)", m.id, (unsigned)m.len);
-    show_reply_start(m);
-}
-
 static void start_tts(void)
 {
     if (s_turn.tts_msg >= 0) {
@@ -1671,6 +1657,19 @@ static void start_tts(void)
         if (m.tts != TTS_QUEUED) {
             continue;
         }
+        /* Speaker off (or no speech fetched): silence paces the captions,
+         * to the text kept, not the whole reply (upstream pacing fix). A
+         * lambda so start_tts stays self-contained for the host harness. */
+        auto start_silent = [&]() {
+            m.pcm_start = s_turn.pcm_out;
+            size_t shown = s_turn.texts ? strlen(s_turn.texts + i * TEXT_MAX) : m.len;
+            m.pcm_frames = (uint32_t)(shown * MIC_RATE / TEXT_CHARS_PER_S);
+            m.tts = TTS_ACTIVE;
+            s_turn.tts_msg = i;
+            s_turn.silent = true;
+            ESP_LOGI(TAG, "showing message %s (%u chars)", m.id, (unsigned)m.len);
+            show_reply_start(m);
+        };
 #if CONFIG_MUSE_TTS_ELEVENLABS || CONFIG_MUSE_TTS_SARVAM
         /*
          * Speak the reply: the message's text (s_turn.texts + i * TEXT_MAX,
@@ -1719,12 +1718,12 @@ static void start_tts(void)
             } else {
                 ESP_LOGW(TAG, "TTS fetch failed; showing message %s silently", m.id);
                 s_turn.mp3_len = 0;
-                start_silent(m, i);
+                start_silent();
             }
             return;
         }
 #endif
-        start_silent(m, i);
+        start_silent();
         return;
     }
 }
@@ -1782,10 +1781,52 @@ static const char TTS_CA_PEM[] =
     "bP6MvPJwNQzcmRk13NfIRmPVNnGuV/u3gm3c\n"
     "-----END CERTIFICATE-----\n";
 
+static void decode(void);
+static bool poll_socket(void);
+
+/*
+ * Decodes while a fetch is still arriving, waiting out a nearly full MP3
+ * buffer so the download paces itself against playback (TCP backpressure
+ * does the rest). Without this the whole reply had to fit MP3_BUF before
+ * decode() ran, cutting speech at about 32 s of 128 kbps audio. The VM
+ * socket is serviced while waiting: a long reply otherwise starves it
+ * past the 60 s dead-connection timeout and loses the turn's tail.
+ */
+static void drain_wait(void)
+{
+    if (now_us() - s_conn.last_ping_us > PING_US) {
+        s_conn.last_ping_us = now_us();
+        ws_send_ping(s_conn.tls);
+    }
+    (void)poll_socket();
+    vTaskDelay(pdMS_TO_TICKS(20));
+}
+
+static void drain_mp3(void)
+{
+    decode();
+    while (s_turn.tts_msg >= 0 && MP3_BUF - s_turn.mp3_len < MP3_POLL_ROOM) {
+        drain_wait();
+        decode();
+    }
+}
+
+/* Like drain_mp3, but waits until at most max_len is buffered: room for a
+ * whole Sarvam chunk, which arrives (base64-decoded) in one piece. */
+static void drain_mp3_to(size_t max_len)
+{
+    decode();
+    while (s_turn.tts_msg >= 0 && s_turn.mp3_len > max_len) {
+        drain_wait();
+        decode();
+    }
+}
+
 static esp_err_t on_tts_http(esp_http_client_event_t *evt)
 {
     if (evt->event_id == HTTP_EVENT_ON_DATA && evt->data_len > 0) {
         tts_data(static_cast<const uint8_t *>(evt->data), evt->data_len);
+        drain_mp3();
     }
     return ESP_OK;
 }
@@ -1918,6 +1959,8 @@ static esp_err_t on_sarvam_http(esp_http_client_event_t *evt)
     memcpy(r->buf + r->len, evt->data, evt->data_len);
     r->len += evt->data_len;
     r->buf[r->len] = '\0';
+    decode();          /* keep playback fed from earlier chunks */
+    (void)poll_socket();
     return ESP_OK;
 }
 
@@ -1933,7 +1976,7 @@ static bool sarvam_post(const char *text)
     cJSON_AddStringToObject(body, "speaker", CONFIG_MUSE_TTS_SARVAM_SPEAKER);
     cJSON_AddStringToObject(body, "model", CONFIG_MUSE_TTS_SARVAM_MODEL);
     cJSON_AddStringToObject(body, "output_audio_codec", "mp3");
-    cJSON_AddNumberToObject(body, "speech_sample_rate", 22050);
+    cJSON_AddNumberToObject(body, "speech_sample_rate", 16000);
     char *json = cJSON_PrintUnformatted(body);
     cJSON_Delete(body);
     if (!json) {
@@ -2004,8 +2047,8 @@ static bool sarvam_fetch(const char *text)
     bool any = false;
     while (off < total) {
         size_t n = total - off;
-        if (n > 450) {
-            n = 450;
+        if (n > 300) {
+            n = 300;
             /* Prefer a sentence end (., ?, !, or the Devanagari danda
              * E0 A5 A4) inside the window; never split a UTF-8 sequence. */
             size_t split = 0;
@@ -2023,13 +2066,15 @@ static bool sarvam_fetch(const char *text)
                 n--;
             }
         }
-        char chunk[480];
+        char chunk[340];
         memcpy(chunk, text + off, n);
         chunk[n] = '\0';
+        drain_mp3_to(MP3_BUF / 2);   /* room for the chunk, cushion still playing */
         if (!sarvam_post(chunk)) {
             return any;   /* keep what earlier chunks fetched */
         }
         any = true;
+        drain_mp3();   /* play this chunk down before fetching the next */
         off += n;
         while (text[off] == ' ') {
             off++;
@@ -2223,6 +2268,9 @@ static void pace_silently(void)
         uint32_t n = end - s_turn.pcm_out < 256 ? end - s_turn.pcm_out : 256;
         xStreamBufferSend(s_out, zeros, n * sizeof(int16_t), 0);
         s_turn.pcm_out += n;
+        if (n) {
+            s_turn.speech_us = now_us();
+        }
     }
     if (s_turn.pcm_out >= end) {
         m.tts = TTS_FINISHED;
@@ -2278,6 +2326,9 @@ static void decode(void)
             xStreamBufferSend(s_out, s_pcm16, n * sizeof(int16_t), 0);
         }
         s_turn.pcm_out += n;
+        if (n) {
+            s_turn.speech_us = now_us();
+        }
         s_turn.kbps = info.bitrate_kbps;
     }
     if (off) {
@@ -2309,7 +2360,10 @@ static void check_turn(void)
         return;
     }
     bool text = s_turn.text;
-    if (t - s_turn.start_us > (text ? TEXT_TURN_CAP_US : TURN_CAP_US)) {
+    /* Speech still draining spares the turn: the cap reaps stuck turns,
+     * not long replies being played (progress stalls, cap applies). */
+    bool draining = s_turn.tts_msg >= 0 && t - s_turn.speech_us < 10 * 1000000LL;
+    if (!draining && t - s_turn.start_us > (text ? TEXT_TURN_CAP_US : TURN_CAP_US)) {
         ESP_LOGW(TAG, "turn hit the time cap");
         /* A voice turn that waited out the cap on a busy agent got no reply at all. */
         if (!text && !s_turn.nmsgs) {

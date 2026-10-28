@@ -56,6 +56,20 @@ void muse_text_to_ascii(char *s, size_t cap);
 /* text, or if it needs stand-ins and fits in cap bytes, a copy with them in buf. */
 const char *muse_text_showable(const char *text, char *buf, size_t cap);
 
+/* Whether the UTF-8 text s has any Devanagari (U+0900-U+097F) in it. */
+bool muse_text_has_devanagari(const char *s);
+
+/*
+ * Transliterates Devanagari in `in` to readable Hinglish (Latin letters)
+ * in out (cap bytes, always NUL-terminated), leaving other text as is.
+ * Character-by-character from the script's own inventory: a consonant's
+ * inherent vowel is replaced by a following vowel sign, silenced by a
+ * virama, and dropped at a word end (Hindi's unwritten schwa, so राम
+ * reads "Ram"). Approximate by design: it is for captions, not print.
+ * Returns the length written.
+ */
+size_t muse_text_to_hinglish(const char *in, char *out, size_t cap);
+
 #ifdef __cplusplus
 }
 #endif
