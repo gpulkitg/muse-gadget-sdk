@@ -1561,21 +1561,6 @@ static void tts_data(const uint8_t *data, size_t len);
 static bool elevenlabs_fetch(const char *text);
 #endif
 
-/* Speaker off (or no speech fetched): silence paces the captions. */
-static void start_silent(msg_t &m, int i)
-{
-    m.pcm_start = s_turn.pcm_out;
-    /* Paced to the text kept: a reply longer than TEXT_MAX shows what was
-     * kept at reading pace, not stretched over the whole reply's time. */
-    size_t shown = s_turn.texts ? strlen(s_turn.texts + i * TEXT_MAX) : m.len;
-    m.pcm_frames = (uint32_t)(shown * MIC_RATE / TEXT_CHARS_PER_S);
-    m.tts = TTS_ACTIVE;
-    s_turn.tts_msg = i;
-    s_turn.silent = true;
-    ESP_LOGI(TAG, "showing message %s (%u chars)", m.id, (unsigned)m.len);
-    show_reply_start(m);
-}
-
 static void start_tts(void)
 {
     if (s_turn.tts_msg >= 0) {
@@ -1611,15 +1596,23 @@ static void start_tts(void)
             show_reply_start(m);
             if (elevenlabs_fetch(s_turn.texts + i * TEXT_MAX)) {
                 s_turn.mp3_ended = true;   /* decode() drains the rest, then finishes */
-            } else {
-                ESP_LOGW(TAG, "TTS fetch failed; showing message %s silently", m.id);
-                s_turn.mp3_len = 0;
-                start_silent(m, i);
+                return;
             }
-            return;
+            ESP_LOGW(TAG, "TTS fetch failed; showing message %s silently", m.id);
+            s_turn.mp3_len = 0;
         }
 #endif
-        start_silent(m, i);
+        /* Speaker off (or no speech fetched): silence paces the captions,
+         * paced to the text kept: a reply longer than TEXT_MAX shows what
+         * was kept at reading pace, not stretched over the whole reply. */
+        m.pcm_start = s_turn.pcm_out;
+        size_t shown = s_turn.texts ? strlen(s_turn.texts + i * TEXT_MAX) : m.len;
+        m.pcm_frames = (uint32_t)(shown * MIC_RATE / TEXT_CHARS_PER_S);
+        m.tts = TTS_ACTIVE;
+        s_turn.tts_msg = i;
+        s_turn.silent = true;
+        ESP_LOGI(TAG, "showing message %s (%u chars)", m.id, (unsigned)m.len);
+        show_reply_start(m);
         return;
     }
 }
