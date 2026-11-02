@@ -65,6 +65,7 @@
 #include "freertos/idf_additions.h"
 #include "freertos/queue.h"
 #include "freertos/stream_buffer.h"
+#include "muse_benchmark.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"
 
@@ -2351,7 +2352,11 @@ extern "C" bool muse_hatch_turn_caption(size_t played, char *out, size_t cap)
 
 extern "C" size_t muse_hatch_turn_read(int16_t *pcm, size_t frames, int wait_ms)
 {
-    return xStreamBufferReceive(s_out, pcm, frames * sizeof(int16_t), pdMS_TO_TICKS(wait_ms)) / sizeof(int16_t);
+    size_t n = xStreamBufferReceive(s_out, pcm, frames * sizeof(int16_t), pdMS_TO_TICKS(wait_ms)) / sizeof(int16_t);
+#if CONFIG_MUSE_BENCHMARK
+    muse_benchmark_buffer(xStreamBufferBytesAvailable(s_out) / sizeof(int16_t), OUT_BYTES / sizeof(int16_t));
+#endif
+    return n;
 }
 
 /* Bench test: decodes the embedded test_reply.mp3 exactly as a reply is decoded. */

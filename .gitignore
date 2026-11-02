@@ -24,3 +24,6 @@ muse-simulator.ppm
 # Local gadget provisioning and original-device flash backups.
 .sdk-token
 /backups/
+
+# Local animation benchmark builds (generated configurations contain credentials).
+/build-animation-*/

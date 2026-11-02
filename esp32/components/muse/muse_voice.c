@@ -31,6 +31,7 @@
 
 #include "muse_adpcm.h"
 #include "muse_audio.h"
+#include "muse_benchmark.h"
 #include "muse_board.h"
 #include "muse_chat.h"
 #include "muse_input.h"
@@ -420,6 +421,9 @@ static void go_idle(const char *caption);
  */
 static bool hatch_reply(bool *delivered)
 {
+#if CONFIG_MUSE_BENCHMARK
+    muse_benchmark_begin(false);
+#endif
     muse_state_set_mode(MUSE_MODE_THINKING);
     muse_state_set_caption("SENDING VOICE NOTE");   /* until there's a transcript or reply */
     static int16_t buf[MUSE_AUDIO_CHUNK];
@@ -462,6 +466,9 @@ static bool hatch_reply(bool *delivered)
                 ESP_LOGW(TAG, "muse: %s", text);
                 muse_state_set_level(0);
                 go_idle(text);
+#if CONFIG_MUSE_BENCHMARK
+                muse_benchmark_end("reply_error");
+#endif
                 return false;
             default:
                 break;
@@ -471,6 +478,9 @@ static bool hatch_reply(bool *delivered)
             ESP_LOGI(TAG, "reply interrupted");
             muse_hatch_turn_cancel();
             muse_state_set_level(0);
+#if CONFIG_MUSE_BENCHMARK
+            muse_benchmark_end("reply_cancel");
+#endif
             return true;
         }
         size_t n = muse_hatch_turn_read(buf, MUSE_AUDIO_CHUNK, speaking || done ? 0 : 20);
@@ -487,6 +497,9 @@ static bool hatch_reply(bool *delivered)
             break;
         } else if (speaking) {
             /* Between messages: keep the speaker fed so it doesn't replay stale DMA. */
+#if CONFIG_MUSE_BENCHMARK
+            muse_benchmark_padding(MUSE_AUDIO_CHUNK);
+#endif
             muse_state_set_level(0);
             muse_audio_write(silence, MUSE_AUDIO_CHUNK);
         }
@@ -498,6 +511,9 @@ static bool hatch_reply(bool *delivered)
     muse_state_set_level(0);
     ESP_LOGI(TAG, "muse reply: %.2fs of audio, %.2fs total", (double)played / MUSE_AUDIO_RATE,
              (esp_timer_get_time() - t0) / 1e6);
+#if CONFIG_MUSE_BENCHMARK
+    muse_benchmark_end(incomplete[0] ? "reply_error" : "reply_end");
+#endif
     if (incomplete[0]) {
         ESP_LOGW(TAG, "muse: %s", incomplete);
         go_idle(incomplete);
@@ -1176,10 +1192,42 @@ static void voice_task(void *arg)
                 muse_audio_chirp(1);
                 pre_reset();
             }
-            if (s_mp3test) {
+#if CONFIG_MUSE_BENCHMARK
+            unsigned bench_ms = muse_benchmark_take_local();
+#endif
+            if (s_mp3test
+#if CONFIG_MUSE_BENCHMARK
+                || bench_ms
+#endif
+            ) {
                 s_mp3test = false;
                 int16_t *pcm = NULL;
                 size_t n = muse_hatch_mp3_selftest(&pcm);
+#if CONFIG_MUSE_BENCHMARK
+                if (bench_ms) {
+                    muse_benchmark_begin(true);
+                    muse_state_set_mode(MUSE_MODE_SPEAKING);
+                    size_t total = (size_t)bench_ms * MUSE_AUDIO_RATE / 1000;
+                    bool interrupted = false;
+                    for (size_t i = 0; n && i < total;) {
+                        muse_input_event_t input;
+                        if (muse_benchmark_local_stop() ||
+                            (xQueuePeek(s_queue, &input, 0) == pdTRUE && input.type == MUSE_PTT_DOWN)) {
+                            interrupted = true;
+                            break;   /* leave the input for the ordinary voice path */
+                        }
+                        size_t at = i % n, count = n - at;
+                        if (count > MUSE_AUDIO_CHUNK) count = MUSE_AUDIO_CHUNK;
+                        if (count > total - i) count = total - i;
+                        muse_state_set_level(muse_audio_level(pcm + at, count));
+                        muse_audio_write(pcm + at, count);
+                        i += count;
+                    }
+                    muse_benchmark_end(!n ? "local_error" : interrupted ? "local_cancel" : "local_end");
+                    muse_state_set_level(0);
+                    muse_state_set_mode(MUSE_MODE_IDLE);
+                } else
+#endif
                 for (size_t i = 0; i < n; i += MUSE_AUDIO_CHUNK) {
                     muse_audio_write(pcm + i, n - i < MUSE_AUDIO_CHUNK ? n - i : MUSE_AUDIO_CHUNK);
                 }

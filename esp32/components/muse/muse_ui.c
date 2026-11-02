@@ -36,6 +36,7 @@
 #include "muse_input.h"
 #include "muse_chat.h"
 #include "muse_console.h"
+#include "muse_benchmark.h"
 #include "muse_link.h"
 #include "muse_mem.h"
 #include "muse_menu.h"
@@ -352,6 +353,9 @@ static int32_t rect_cells(const lv_area_t *r)
 static void invalidate_muse(void)
 {
     if (!s_cells) {
+#if CONFIG_MUSE_BENCHMARK
+        muse_benchmark_dirty(s_muse_src.header.w * s_muse_src.header.h);
+#endif
         lv_obj_invalidate(s_canvas);
         return;
     }
@@ -408,6 +412,9 @@ static void invalidate_muse(void)
             at.x1 + cell_px(r[i].x2 + 1, size) - 1,
             at.y1 + cell_px(r[i].y2 + 1, size) - 1,
         };
+#if CONFIG_MUSE_BENCHMARK
+        muse_benchmark_dirty(lv_area_get_width(&a) * lv_area_get_height(&a));
+#endif
         lv_obj_invalidate_area(s_canvas, &a);
     }
 }
@@ -1720,23 +1727,38 @@ static void frame_tick(lv_timer_t *timer)
         s_last_mode = mode;
     }
     if (update_sleep()) {
+#if CONFIG_MUSE_BENCHMARK
+        muse_benchmark_ui_pause();
+#endif
         return;
     }
 #if CONFIG_MUSE_VIDEO
     if (muse_video_tick()) {
+#if CONFIG_MUSE_BENCHMARK
+        muse_benchmark_ui_pause();
+#endif
         muse_menu_close();
         return;   /* video covers everything */
     }
 #endif
     update_chrome(now);
     if (muse_menu_tick(now)) {
+#if CONFIG_MUSE_BENCHMARK
+        muse_benchmark_ui_pause();
+#endif
         image_hide_locked();
         return;   /* the menu covers the face */
     }
     if (s_image_dsc.data) {
+#if CONFIG_MUSE_BENCHMARK
+        muse_benchmark_ui_pause();
+#endif
         return;   /* the image covers the face */
     }
     if (s_tv && lv_obj_get_scroll_x(s_tv) != 0) {
+#if CONFIG_MUSE_BENCHMARK
+        muse_benchmark_ui_pause();
+#endif
         /* Off screen, or sliding to or from settings: hold still so the
          * slide gets the whole frame time. */
         return;
@@ -1757,8 +1779,17 @@ static void frame_tick(lv_timer_t *timer)
         .happy = muse_state_happiness(),
     };
     if (!muse_board->epaper || mode != s_last_epaper_pose) {
+#if CONFIG_MUSE_BENCHMARK
+        int64_t bench_at = esp_timer_get_time();
+#endif
         muse_pixel_render(&pose);
+#if CONFIG_MUSE_BENCHMARK
+        uint32_t bench_render = esp_timer_get_time() - bench_at;
+#endif
         invalidate_muse();
+#if CONFIG_MUSE_BENCHMARK
+        muse_benchmark_frame(mode, bench_at, bench_render, esp_timer_get_time() - bench_at, muse_board->frame_ms * 1000);
+#endif
         s_last_epaper_pose = mode;
     }
 

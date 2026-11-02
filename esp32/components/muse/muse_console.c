@@ -27,6 +27,11 @@ esp_err_t muse_console_install(size_t rx_buf)
 {
     usb_serial_jtag_driver_config_t cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     cfg.rx_buffer_size = rx_buf;
+#if CONFIG_MUSE_BENCHMARK
+    /* One complete JSON report must fit: BYTEBUF send is all-or-nothing and
+     * cannot queue a record larger than the ring, regardless of timeout. */
+    cfg.tx_buffer_size = 2048;
+#endif
     esp_err_t err = usb_serial_jtag_driver_install(&cfg);
     if (err == ESP_OK) {
         /* stdout/logs must share the driver's TX ring with console writes,

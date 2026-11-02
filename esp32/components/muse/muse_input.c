@@ -44,6 +44,7 @@
 #include "muse_state.h"
 #include "muse_ui.h"
 #include "muse_voice.h"
+#include "muse_benchmark.h"
 #include "muse_wifi.h"
 #if CONFIG_MUSE_VIDEO
 #include "muse_video.h"
@@ -108,6 +109,9 @@ static volatile bool s_nap_now;   /* ">nap": asleep, as if on battery, nap witho
 
 static void post(muse_ptt_t type, bool wake)
 {
+#if CONFIG_MUSE_BENCHMARK
+    if (type == MUSE_PTT_DOWN || type == MUSE_PTT_UP) muse_benchmark_input(type == MUSE_PTT_DOWN);
+#endif
     muse_input_event_t ev = { .type = type, .wake = wake, .epoch = muse_input_call_epoch() };
     bool pending = type == MUSE_PTT_DOWN && muse_voice_ptt_enabled() && !muse_voice_in_call();
     if (pending) {
@@ -764,6 +768,15 @@ static void set_face(const char *name)
  */
 static bool console_command(char *line, bool whole)
 {
+#if CONFIG_MUSE_BENCHMARK
+    if (whole && muse_benchmark_command(line)) {
+        if (!strncmp(line, "bench.play=", 11)) {
+            set_asleep(false, "benchmark");
+            muse_state_poke();
+        }
+        return true;
+    }
+#endif
     if (whole && s_console_hook && s_console_hook(line)) {
         return true;
     }

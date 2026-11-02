@@ -37,6 +37,9 @@ if(CONFIG_MUSE_ENABLED)
         "muse_text.c"
         "muse_link.c"
         "muse_ble.c")
+    if(CONFIG_MUSE_BENCHMARK)
+        list(APPEND srcs "muse_benchmark.c")
+    endif()
     if(CONFIG_MUSE_UI_FREEINK)
         # E-paper: FreeInk draws the face, Settings and the keyboard.
         list(APPEND srcs "eink/muse_eink_ui.cpp" "eink/muse_eink_settings.cpp" "eink/muse_eink_fonts.cpp")

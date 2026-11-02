@@ -30,10 +30,14 @@
 #include "freertos/task.h"
 
 #include "muse_mem.h"
+#include "muse_benchmark.h"
 
 typedef struct {
     const uint8_t *data;   /* NULL: run s_call instead */
     int x1, y1, x2, y2;
+#if CONFIG_MUSE_BENCHMARK
+    int64_t queued_us;
+#endif
 } band_t;
 
 static const char *TAG = "lcd_bands";
@@ -94,6 +98,9 @@ static bool IRAM_ATTR on_chunk_sent(esp_lcd_panel_io_handle_t io, esp_lcd_panel_
     bool last = chunk_done();
     if (last) {
         s_band_end = esp_timer_get_time();
+#if CONFIG_MUSE_BENCHMARK
+        muse_benchmark_display_done(s_band_end);
+#endif
     }
     bool yield = last && esp_lv_adapter_display_notify_color_trans_done_from_isr(s_disp);
     /* esp_lcd's SPI IO ignores this callback's return value, so the send
@@ -133,8 +140,15 @@ static esp_err_t queue_band(lv_display_t *disp, esp_lcd_panel_handle_t panel, in
     (void)disp;
     (void)panel;
     (void)ctx;
-    band_t b = { data, x1, y1, x2, y2 };
-    return xQueueSend(s_bands, &b, 0) == pdTRUE ? ESP_OK : ESP_FAIL;
+    band_t b = { .data = data, .x1 = x1, .y1 = y1, .x2 = x2, .y2 = y2 };
+#if CONFIG_MUSE_BENCHMARK
+    b.queued_us = esp_timer_get_time();
+#endif
+    bool queued = xQueueSend(s_bands, &b, 0) == pdTRUE;
+#if CONFIG_MUSE_BENCHMARK
+    if (!queued) muse_benchmark_display_error();
+#endif
+    return queued ? ESP_OK : ESP_FAIL;
 }
 
 /*
@@ -276,6 +290,9 @@ static void send_bands(void *arg)
             continue;
         }
         size_t row = (size_t)(b.x2 - b.x1) * 2;
+#if CONFIG_MUSE_BENCHMARK
+        muse_benchmark_display_begin(b.queued_us, (b.x2 - b.x1) * (b.y2 - b.y1));
+#endif
         te_band(b.y1, b.y2, row * (size_t)(b.y2 - b.y1));
         int rows = s_chunk_bytes / row & ~1;
         /* LVGL sends no more until this band is done, so nothing is still
@@ -288,8 +305,14 @@ static void send_bands(void *arg)
             wire_idle(1);
             esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel, b.x1, y, b.x2, y + h, s_chunk[k]);
             if (err != ESP_OK) {
+#if CONFIG_MUSE_BENCHMARK
+                muse_benchmark_display_error();
+#endif
                 xSemaphoreGive(s_chunk_free);
                 if (chunk_done()) {
+#if CONFIG_MUSE_BENCHMARK
+                    muse_benchmark_display_done(esp_timer_get_time());
+#endif
                     lv_display_flush_ready(s_disp);
                 }
             }

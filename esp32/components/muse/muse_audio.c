@@ -30,6 +30,7 @@
 #include "freertos/task.h"
 
 #include "muse_board.h"
+#include "muse_benchmark.h"
 #include "muse_mem.h"
 #include "muse_settings.h"
 
@@ -430,11 +431,24 @@ esp_err_t muse_audio_write(const int16_t *mono, size_t frames)
     bool mute = !muse_settings_speaker_on();
     while (frames) {
         size_t n = frames > MUSE_AUDIO_CHUNK ? MUSE_AUDIO_CHUNK : frames;
+#if CONFIG_MUSE_BENCHMARK
+        bool nonzero = false;
+#endif
         for (size_t i = 0; i < n; i++) {
             s_out_stereo[2 * i] = mute ? 0 : mono[i];
             s_out_stereo[2 * i + 1] = mute ? 0 : mono[i];
+#if CONFIG_MUSE_BENCHMARK
+            nonzero |= !mute && mono[i] != 0;
+#endif
         }
-        if (esp_codec_dev_write(s_spk, s_out_stereo, n * CHANNELS * sizeof(int16_t)) != ESP_CODEC_DEV_OK) {
+#if CONFIG_MUSE_BENCHMARK
+        int64_t bench_at = esp_timer_get_time();
+#endif
+        int written = esp_codec_dev_write(s_spk, s_out_stereo, n * CHANNELS * sizeof(int16_t));
+#if CONFIG_MUSE_BENCHMARK
+        muse_benchmark_audio(bench_at, esp_timer_get_time() - bench_at, n, written == ESP_CODEC_DEV_OK, nonzero);
+#endif
+        if (written != ESP_CODEC_DEV_OK) {
             return ESP_FAIL;
         }
         mono += n;

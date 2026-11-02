@@ -22,6 +22,7 @@
 
 #include "muse_audio.h"
 #include "muse_battery.h"
+#include "muse_benchmark.h"
 #include "muse_board.h"
 #include "muse_ble.h"
 #include "muse_chat.h"
@@ -83,6 +84,9 @@ void muse_app_run(const muse_board_t *board)
 
     QueueHandle_t q = xQueueCreate(16, sizeof(muse_input_event_t));
     ESP_ERROR_CHECK(muse_input_start(q));
+#if CONFIG_MUSE_BENCHMARK
+    muse_benchmark_start();
+#endif
 
     /* Let the boot animation (flame ignites, eyes open) play out. */
     vTaskDelay(pdMS_TO_TICKS(1400));
