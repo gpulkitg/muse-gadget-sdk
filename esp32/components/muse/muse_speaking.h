@@ -13,13 +13,13 @@
 /* Normalized, interruptible speaking choreography. Pure C, fixed storage, no
  * clock/random APIs or allocations; the renderer supplies time and audio level.
  * A rest is a real state, not an invitation to fill every frame with motion. */
-enum { MUSE_SPEAK_REST, MUSE_SPEAK_EXPLAIN, MUSE_SPEAK_PRESENT };
+enum { MUSE_SPEAK_REST, MUSE_SPEAK_RAISE, MUSE_SPEAK_STEPS, MUSE_SPEAK_OPEN };
 typedef struct {
     bool active, heard_voice;
-    unsigned action, next, side, leader, points;
+    unsigned action, next, side, leader, opener;
     uint32_t seed;
     float time, duration, mode_t, quiet, energy;
-    float lift[2], extend[2];
+    float lift[2], extend[2], inward[2], wrist[2];
 } muse_speaking_t;
 
 static inline float muse_speak_clamp(float x, float lo, float hi)
@@ -39,6 +39,11 @@ static inline float muse_speak_random(muse_speaking_t *s)
     return (s->seed >> 16) / 65535.0f;
 }
 
+static inline float muse_speak_pulse(float t, float length, float rise, float fall)
+{
+    return muse_speak_ease(t / rise) * (1 - muse_speak_ease((t - length + fall) / fall));
+}
+
 static inline void muse_speaking_update(muse_speaking_t *s, bool speaking, float dt, float mode_t, float level)
 {
     dt = muse_speak_clamp(dt, 0, .2f);
@@ -48,11 +53,12 @@ static inline void muse_speaking_update(muse_speaking_t *s, bool speaking, float
         s->heard_voice = false;
         s->quiet = 0;
         s->action = MUSE_SPEAK_REST;
-        s->next = MUSE_SPEAK_EXPLAIN;
+        /* Rotate openers too: several short replies must not always show the
+         * same first gesture while never reaching the rest of the sequence. */
+        s->next = MUSE_SPEAK_RAISE + s->opener++ % 3;
         s->time = 0;
         s->duration = .12f;
         s->leader = muse_speak_random(s) > .5f;
-        s->points = 0;
         s->mode_t = mode_t;
     }
     /* mode_t does not advance during preview warm-up. Real state changes
@@ -74,44 +80,68 @@ static inline void muse_speaking_update(muse_speaking_t *s, bool speaking, float
             s->time = 0;
             if (s->action == MUSE_SPEAK_REST) {
                 s->action = s->next;
-                s->side = s->action == MUSE_SPEAK_EXPLAIN ? s->leader : (s->leader ^ (s->points == 0));
-                s->duration = s->action == MUSE_SPEAK_EXPLAIN ? 1.55f + .20f * muse_speak_random(s) : 1.12f;
+                s->side = s->leader;
+                s->duration = s->action == MUSE_SPEAK_RAISE ? 2.05f
+                            : s->action == MUSE_SPEAK_STEPS ? 1.90f : 1.65f;
+                /* Advance on START, not completion. A mid-gesture pause must
+                 * settle and continue with a different family on resumption. */
+                s->next = s->action == MUSE_SPEAK_OPEN ? MUSE_SPEAK_RAISE : s->action + 1;
+                if (s->action == MUSE_SPEAK_OPEN) s->leader ^= 1;
             } else {
-                unsigned finished = s->action;
                 s->action = MUSE_SPEAK_REST;
-                if (finished == MUSE_SPEAK_EXPLAIN) {
-                    s->next = MUSE_SPEAK_PRESENT;
-                    s->points = 0;
-                    s->duration = .75f + .45f * muse_speak_random(s);
-                } else if (++s->points < 2) {
-                    s->next = MUSE_SPEAK_PRESENT;
-                    s->duration = .35f + .25f * muse_speak_random(s);
-                } else {
-                    s->next = MUSE_SPEAK_EXPLAIN;
-                    s->leader ^= 1;
-                    s->duration = 1.05f + .65f * muse_speak_random(s);
-                }
+                s->duration = .42f + .30f * muse_speak_random(s);
             }
         }
     }
-    float lift[2] = {0}, extend[2] = {0};
+    float lift[2] = {0}, extend[2] = {0}, inward[2] = {0}, wrist[2] = {0};
     if (speaking && !pause && s->action != MUSE_SPEAK_REST) {
-        bool explain = s->action == MUSE_SPEAK_EXPLAIN;
-        float prepare = explain ? .32f : .24f, reach = explain ? .42f : .30f;
-        float settle = explain ? .42f : .32f;
-        float envelope = 1 - muse_speak_ease((s->time - (s->duration - settle)) / settle);
         float amplitude = .88f + .12f * s->energy;
-        lift[s->side] = muse_speak_ease(s->time / prepare) * envelope * amplitude;
-        extend[s->side] = muse_speak_ease((s->time - prepare * .65f) / reach) * envelope * amplitude;
-        if (explain) lift[s->side ^ 1] = lift[s->side] * .16f;
+        if (s->action == MUSE_SPEAK_RAISE) {
+            /* Tall, mostly vertical raises: first one paw, then the other. */
+            for (int i = 0; i < 2; i++) {
+                int hand = s->side ^ i;
+                float p = muse_speak_pulse(s->time - i * .98f, .94f, .24f, .30f) * amplitude;
+                lift[hand] = p;
+                extend[hand] = p * .14f;
+                wrist[hand] = (hand ? -1 : 1) * p * .90f;
+            }
+        } else if (s->action == MUSE_SPEAK_STEPS) {
+            /* A hand in front of the torso marks three compact beats, moving
+             * slightly higher with each point. The support paw stays low. */
+            float envelope = muse_speak_pulse(s->time, s->duration, .25f, .30f);
+            float beat = 0, progress = 0;
+            for (int i = 0; i < 3; i++) {
+                float t = s->time - .24f - i * .43f;
+                beat += muse_speak_pulse(t, .34f, .10f, .17f);
+                progress += muse_speak_ease(t / .12f) / 3;
+            }
+            int hand = s->side, support = hand ^ 1;
+            lift[hand] = envelope * (.20f + .28f * progress + .18f * beat) * amplitude;
+            inward[hand] = envelope * (.96f - .27f * beat);
+            wrist[hand] = (hand ? 1 : -1) * envelope * .75f;
+            lift[support] = .12f * envelope;
+            inward[support] = .38f * envelope;
+        } else {
+            /* Open both paws outward together: a broad, balanced silhouette. */
+            float p = muse_speak_pulse(s->time, s->duration, .36f, .42f) * amplitude;
+            for (int i = 0; i < 2; i++) {
+                lift[i] = p * .48f;
+                extend[i] = p;
+                wrist[i] = (i ? 1 : -1) * p * .50f;
+            }
+        }
     }
     /* Critically bounded travel, including interrupted preparations and holds.
      * No final gesture is queued when speech ends, and a second hand is optional. */
-    float blend = muse_speak_clamp(dt * 14, 0, 1);
+    float blend = muse_speak_clamp(dt * 12, 0, 1);
     for (int i = 0; i < 2; i++) {
         s->lift[i] += (lift[i] - s->lift[i]) * blend;
         s->extend[i] += (extend[i] - s->extend[i]) * blend;
+        s->inward[i] += (inward[i] - s->inward[i]) * blend;
+        s->wrist[i] += (wrist[i] - s->wrist[i]) * blend;
         if (s->lift[i] < .001f) s->lift[i] = 0;
         if (s->extend[i] < .001f) s->extend[i] = 0;
+        if (s->inward[i] < .001f) s->inward[i] = 0;
+        if (s->wrist[i] > -.001f && s->wrist[i] < .001f) s->wrist[i] = 0;
     }
 }

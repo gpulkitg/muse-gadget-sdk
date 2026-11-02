@@ -914,8 +914,9 @@ void muse_pixel_render(const muse_pose_t *p)
     muse_speaking_update(&speech, mode == MUSE_MODE_SPEAKING, dt, p->mode_t, level);
 #if CONFIG_MUSE_BENCHMARK
     if (speech.action != prior_action || was_speaking != speech.active) {
-        const char *event = speech.action == MUSE_SPEAK_EXPLAIN ? "gesture_explain"
-                          : speech.action == MUSE_SPEAK_PRESENT ? "gesture_present" : "gesture_rest";
+        const char *event = speech.action == MUSE_SPEAK_RAISE ? "gesture_raise"
+                          : speech.action == MUSE_SPEAK_STEPS ? "gesture_steps"
+                          : speech.action == MUSE_SPEAK_OPEN ? "gesture_open" : "gesture_rest";
         muse_benchmark_event(event, speech.side);
     }
 #endif
@@ -1013,9 +1014,9 @@ void muse_pixel_render(const muse_pose_t *p)
     case MUSE_MODE_SPEAKING: {
         for (int i = 0; i < 2; i++) {
             float side = i ? 1 : -1;
-            arms[i] = (limb_t){j.cx + side * (adx + speech.extend[i] * 3.2f),
-                ay - speech.lift[i] * 7.0f - speech.extend[i] * 2.0f,
-                side * (.30f + speech.lift[i] * 1.05f)};
+            arms[i] = (limb_t){j.cx + side * (adx + speech.extend[i] * 3.2f - speech.inward[i] * 8.5f),
+                ay - speech.lift[i] * 10.0f - speech.extend[i] * 2.0f,
+                side * (.30f + speech.lift[i] * 1.05f) + speech.wrist[i]};
         }
         break;
     }

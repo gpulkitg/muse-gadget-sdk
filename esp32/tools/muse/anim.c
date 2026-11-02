@@ -42,6 +42,7 @@ typedef struct {
     float stop_at;          /* speaking ends mid-action, then idle/listening */
     bool interrupt;
     bool pause;
+    bool steady;            /* sustained voice to show every gesture family */
 } anim_t;
 
 static const anim_t ANIMS[] = {
@@ -49,6 +50,7 @@ static const anim_t ANIMS[] = {
     { "idle", MUSE_MODE_IDLE, 6.0f, 5 },
     { "listening", MUSE_MODE_LISTENING, 4.0f, 0, .talky = true },
     { "thinking", MUSE_MODE_THINKING, 4.0f, 0 },
+    { "speaking_variety", MUSE_MODE_SPEAKING, 12.0f, 0, .talky = true, .steady = true },
     { "speaking", MUSE_MODE_SPEAKING, 4.0f, 0, .talky = true },
     { "speaking_long", MUSE_MODE_SPEAKING, 12.0f, 0, .talky = true },
     { "speaking_short", MUSE_MODE_SPEAKING, 2.0f, 0, .talky = true, .stop_at = .48f },
@@ -118,6 +120,7 @@ int main(int argc, char **argv)
                 p.mode_t = 0;
             }
             if (an->pause && rt > 2.5f && rt < 4.0f) p.level = 0;
+            if (an->steady) p.level = .55f + .15f * sinf(rt * 6.3f);
             if (an->stop_at > 0 && rt >= an->stop_at) {
                 p.mode = an->interrupt ? MUSE_MODE_LISTENING : MUSE_MODE_IDLE;
                 p.mode_t = rt - an->stop_at;

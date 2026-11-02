@@ -30,29 +30,60 @@ int main(void) {
         assert(!s.active && hands(&s)<.01f);
     }
     muse_speaking_t s={0};
-    bool explain=false, left=false, right=false, rest=false;
+    bool raise=false, steps=false, open=false, rest=false;
+    unsigned previous=MUSE_SPEAK_REST, sequence[40]={0}, actions=0;
     for(int i=0;i<1500;i++) {
         muse_speaking_update(&s,true,.04f,i*.04f,.6f);
-        explain |= s.action==MUSE_SPEAK_EXPLAIN && hands(&s)>1;
-        left |= s.action==MUSE_SPEAK_PRESENT && s.side==0 && hands(&s)>1;
-        right |= s.action==MUSE_SPEAK_PRESENT && s.side==1 && hands(&s)>1;
+        raise |= s.action==MUSE_SPEAK_RAISE && hands(&s)>.8f;
+        steps |= s.action==MUSE_SPEAK_STEPS && s.inward[s.side]>.7f;
+        open |= s.action==MUSE_SPEAK_OPEN && s.extend[0]>.7f && s.extend[1]>.7f;
+        if(s.action!=MUSE_SPEAK_REST && s.action!=previous && actions<40) sequence[actions++]=s.action;
+        previous=s.action;
         rest |= i>50 && s.action==MUSE_SPEAK_REST && hands(&s)<.05f;
-        for(int j=0;j<2;j++) { assert(s.lift[j]>=0 && s.lift[j]<=1); assert(s.extend[j]>=0 && s.extend[j]<=1); }
+        for(int j=0;j<2;j++) {
+            assert(s.lift[j]>=0 && s.lift[j]<=1); assert(s.extend[j]>=0 && s.extend[j]<=1);
+            assert(s.inward[j]>=0 && s.inward[j]<=1); assert(fabsf(s.wrist[j])<=1);
+        }
     }
-    assert(explain && left && right && rest);
+    assert(raise && steps && open && rest && actions>=9);
+    for(unsigned i=0;i<actions;i++) assert(sequence[i]==MUSE_SPEAK_RAISE+i%3);
+    /* The raise family actually changes hands, unlike the inward step beats
+       or the simultaneous bilateral opening. */
+    s=(muse_speaking_t){0};
+    int first=-1,second=-1;
+    for(int i=0;i<55;i++) {
+        muse_speaking_update(&s,true,.04f,i*.04f,.6f);
+        if(s.action==MUSE_SPEAK_RAISE && s.time>.3f && s.time<.7f) first=s.lift[1]>s.lift[0];
+        if(s.action==MUSE_SPEAK_RAISE && s.time>1.3f && s.time<1.6f) second=s.lift[1]>s.lift[0];
+    }
+    assert(first>=0 && second>=0 && first!=second);
     /* A real pause closes down motion; sustained silent caption pacing still
        gets general gestures, because this main branch has no TTS. */
     s=(muse_speaking_t){0};
     for(int i=0;i<25;i++) muse_speaking_update(&s,true,.04f,i*.04f,.7f);
     for(int i=25;i<55;i++) muse_speaking_update(&s,true,.04f,i*.04f,0);
     assert(hands(&s)<.01f && s.energy<.001f);
-    bool resumed=false;
-    for(int i=55;i<100;i++) { muse_speaking_update(&s,true,.04f,i*.04f,.7f); resumed |= hands(&s)>.8f; }
-    assert(resumed);
+    unsigned resumed=0;
+    for(int i=55;i<100;i++) {
+        muse_speaking_update(&s,true,.04f,i*.04f,.7f);
+        if(!resumed && s.action!=MUSE_SPEAK_REST) resumed=s.action;
+    }
+    assert(resumed==MUSE_SPEAK_STEPS);
     s=(muse_speaking_t){0};
     float peak=0;
     for(int i=0;i<100;i++) { muse_speaking_update(&s,true,.04f,i*.04f,0); if(hands(&s)>peak) peak=hands(&s); }
-    assert(peak>1 && s.energy==0);
+    assert(peak>.7f && s.energy==0);
+    /* Brief replies must rotate their openers too. */
+    s=(muse_speaking_t){0};
+    for(unsigned reply=0;reply<6;reply++) {
+        unsigned opener=0;
+        for(int i=0;i<13;i++) {
+            muse_speaking_update(&s,true,.04f,i*.04f,.6f);
+            if(!opener && s.action!=MUSE_SPEAK_REST) opener=s.action;
+        }
+        assert(opener==MUSE_SPEAK_RAISE+reply%3);
+        for(int i=0;i<15;i++) muse_speaking_update(&s,false,.04f,i*.04f,0);
+    }
     /* Preview warm-up at an unchanged mode time must not consume the opener. */
     s=(muse_speaking_t){0};
     for(int i=0;i<40;i++) muse_speaking_update(&s,true,.04f,0,.5f);
