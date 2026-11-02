@@ -914,7 +914,8 @@ void muse_pixel_render(const muse_pose_t *p)
     muse_speaking_update(&speech, mode == MUSE_MODE_SPEAKING, dt, p->mode_t, level);
 #if CONFIG_MUSE_BENCHMARK
     if (speech.action != prior_action || was_speaking != speech.active) {
-        const char *event = speech.action == MUSE_SPEAK_RAISE ? "gesture_raise"
+        const char *event = speech.action == MUSE_SPEAK_RAISE_RIGHT ? "gesture_raise_right"
+                          : speech.action == MUSE_SPEAK_RAISE_LEFT ? "gesture_raise_left"
                           : speech.action == MUSE_SPEAK_STEPS ? "gesture_steps"
                           : speech.action == MUSE_SPEAK_OPEN ? "gesture_open" : "gesture_rest";
         muse_benchmark_event(event, speech.side);
@@ -967,6 +968,7 @@ void muse_pixel_render(const muse_pose_t *p)
     j.fb = 7.4f * squash;
     j.fx = j.cx + lean * 0.3f;
     j.fy = j.cy - j.b * 0.30f + bob * 0.3f;
+    if (mode == MUSE_MODE_SPEAKING) j.fy += speech.nod * .8f;
 
     /* ---- background layers ---- */
     float aura_r = 29.0f + level * 4.0f + sinf(t * 1.5f) * 1.0f;
@@ -1081,9 +1083,12 @@ void muse_pixel_render(const muse_pose_t *p)
         break;
     case MUSE_MODE_SPEAKING:
         mouth = MOUTH_TALK;
-        /* Speech energy controls articulation; silence closes the mouth. */
-        mouth_open = clampf((speech.energy - .035f) * 1.5f, 0, 1);
-        if (mouth_open > .16f && mouth_open < .55f && level < speech.energy * .8f) mouth = MOUTH_O;
+        /* Real audio drives articulation; caption-only replies have a visual
+         * speaking rhythm so their mouth no longer stays fixed shut. */
+        mouth_open = speech.mouth;
+        if (mouth_open > .16f && mouth_open < .55f &&
+            (!speech.heard_voice || level < speech.energy * .8f)) mouth = MOUTH_O;
+        if (speech.eye_wide > .4f) style = EYES_WIDE;
         break;
     case MUSE_MODE_ERROR:
         style = EYES_X;
@@ -1101,8 +1106,10 @@ void muse_pixel_render(const muse_pose_t *p)
         mouth = MOUTH_GRIN;
     }
 
-    draw_eye(j.fx - eye_dx, eye_y, open, style, s_eyes.gx, s_eyes.gy);
-    draw_eye(j.fx + eye_dx, eye_y, open, style, s_eyes.gx, s_eyes.gy);
+    float gaze_x = s_eyes.gx;
+    if (mode == MUSE_MODE_SPEAKING) gaze_x = clampf(gaze_x + speech.gaze, -1, 1);
+    draw_eye(j.fx - eye_dx, eye_y, open, style, gaze_x, s_eyes.gy);
+    draw_eye(j.fx + eye_dx, eye_y, open, style, gaze_x, s_eyes.gy);
 
     /* Tiny brows for the expressive states. */
     int bl = iround(j.fx - eye_dx), br = iround(j.fx + eye_dx), by = iround(eye_y) - 4;
@@ -1113,8 +1120,9 @@ void muse_pixel_render(const muse_pose_t *p)
         px(bl - 1, by - 1, C_BROW); px(bl, by - 1, C_BROW);
         px(br - 1, by - 1, C_BROW); px(br, by - 1, C_BROW);
     } else if (mode == MUSE_MODE_SPEAKING) {
-        px(bl, by - (speech.lift[0] > .45f), C_BROW);
-        px(br, by - (speech.lift[1] > .45f), C_BROW);
+        int raise = iround(speech.brow * 2);
+        px(bl - 1, by - raise, C_BROW); px(bl, by - raise, C_BROW);
+        px(br - 1, by - raise, C_BROW); px(br, by - raise, C_BROW);
     }
 
     float blush = 0.55f + happy * 0.45f + (mode == MUSE_MODE_SPEAKING ? 0.15f : 0.0f);

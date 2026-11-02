@@ -30,11 +30,14 @@ int main(void) {
         assert(!s.active && hands(&s)<.01f);
     }
     muse_speaking_t s={0};
-    bool raise=false, steps=false, open=false, rest=false;
+    bool right=false, left=false, steps=false, open=false, rest=false;
     unsigned previous=MUSE_SPEAK_REST, sequence[40]={0}, actions=0;
     for(int i=0;i<1500;i++) {
         muse_speaking_update(&s,true,.04f,i*.04f,.6f);
-        raise |= s.action==MUSE_SPEAK_RAISE && hands(&s)>.8f;
+        right |= s.action==MUSE_SPEAK_RAISE_RIGHT && s.lift[1]>.7f;
+        left |= s.action==MUSE_SPEAK_RAISE_LEFT && s.lift[0]>.7f;
+        if(s.action==MUSE_SPEAK_RAISE_RIGHT && s.time>.3f) assert(s.side==1 && s.lift[0]<.1f);
+        if(s.action==MUSE_SPEAK_RAISE_LEFT && s.time>.3f) assert(s.side==0 && s.lift[1]<.1f);
         steps |= s.action==MUSE_SPEAK_STEPS && s.inward[s.side]>.7f;
         open |= s.action==MUSE_SPEAK_OPEN && s.extend[0]>.7f && s.extend[1]>.7f;
         if(s.action!=MUSE_SPEAK_REST && s.action!=previous && actions<40) sequence[actions++]=s.action;
@@ -45,49 +48,49 @@ int main(void) {
             assert(s.inward[j]>=0 && s.inward[j]<=1); assert(fabsf(s.wrist[j])<=1);
         }
     }
-    assert(raise && steps && open && rest && actions>=9);
-    for(unsigned i=0;i<actions;i++) assert(sequence[i]==MUSE_SPEAK_RAISE+i%3);
-    /* The raise family actually changes hands, unlike the inward step beats
-       or the simultaneous bilateral opening. */
-    s=(muse_speaking_t){0};
-    int first=-1,second=-1;
-    for(int i=0;i<55;i++) {
-        muse_speaking_update(&s,true,.04f,i*.04f,.6f);
-        if(s.action==MUSE_SPEAK_RAISE && s.time>.3f && s.time<.7f) first=s.lift[1]>s.lift[0];
-        if(s.action==MUSE_SPEAK_RAISE && s.time>1.3f && s.time<1.6f) second=s.lift[1]>s.lift[0];
-    }
-    assert(first>=0 && second>=0 && first!=second);
+    assert(right && left && steps && open && rest && actions>=9);
+    /* Left and right raises are separate actions with other actions between. */
+    for(unsigned i=0;i<actions;i++) assert(sequence[i]==MUSE_SPEAK_RAISE_RIGHT+i%4);
     /* A real pause closes down motion; sustained silent caption pacing still
        gets general gestures, because this main branch has no TTS. */
     s=(muse_speaking_t){0};
-    for(int i=0;i<25;i++) muse_speaking_update(&s,true,.04f,i*.04f,.7f);
-    for(int i=25;i<55;i++) muse_speaking_update(&s,true,.04f,i*.04f,0);
-    assert(hands(&s)<.01f && s.energy<.001f);
+    for(int i=0;i<15;i++) muse_speaking_update(&s,true,.04f,i*.04f,.7f);
+    for(int i=15;i<45;i++) muse_speaking_update(&s,true,.04f,i*.04f,0);
+    assert(hands(&s)<.01f && s.energy<.001f && s.mouth<.001f);
     unsigned resumed=0;
-    for(int i=55;i<100;i++) {
+    for(int i=45;i<95;i++) {
         muse_speaking_update(&s,true,.04f,i*.04f,.7f);
         if(!resumed && s.action!=MUSE_SPEAK_REST) resumed=s.action;
     }
     assert(resumed==MUSE_SPEAK_STEPS);
     s=(muse_speaking_t){0};
-    float peak=0;
-    for(int i=0;i<100;i++) { muse_speaking_update(&s,true,.04f,i*.04f,0); if(hands(&s)>peak) peak=hands(&s); }
+    float peak=0, mouth_min=1, mouth_max=0, brow_max=0, wide_max=0, gaze_max=0;
+    for(int i=0;i<250;i++) {
+        muse_speaking_update(&s,true,.04f,i*.04f,0);
+        if(hands(&s)>peak) peak=hands(&s);
+        if(s.mouth<mouth_min) mouth_min=s.mouth;
+        if(s.mouth>mouth_max) mouth_max=s.mouth;
+        if(s.brow>brow_max) brow_max=s.brow;
+        if(s.eye_wide>wide_max) wide_max=s.eye_wide;
+        if(fabsf(s.gaze)>gaze_max) gaze_max=fabsf(s.gaze);
+    }
     assert(peak>.7f && s.energy==0);
+    assert(mouth_max>.5f && mouth_min<.05f && brow_max>.5f && wide_max>.4f && gaze_max>.4f);
     /* Brief replies must rotate their openers too. */
     s=(muse_speaking_t){0};
-    for(unsigned reply=0;reply<6;reply++) {
+    for(unsigned reply=0;reply<8;reply++) {
         unsigned opener=0;
         for(int i=0;i<13;i++) {
             muse_speaking_update(&s,true,.04f,i*.04f,.6f);
             if(!opener && s.action!=MUSE_SPEAK_REST) opener=s.action;
         }
-        assert(opener==MUSE_SPEAK_RAISE+reply%3);
+        assert(opener==MUSE_SPEAK_RAISE_RIGHT+reply%4);
         for(int i=0;i<15;i++) muse_speaking_update(&s,false,.04f,i*.04f,0);
     }
     /* Preview warm-up at an unchanged mode time must not consume the opener. */
     s=(muse_speaking_t){0};
-    for(int i=0;i<40;i++) muse_speaking_update(&s,true,.04f,0,.5f);
-    assert(s.action==MUSE_SPEAK_REST && hands(&s)==0);
+    for(int i=0;i<40;i++) muse_speaking_update(&s,true,.04f,0,0);
+    assert(s.action==MUSE_SPEAK_REST && hands(&s)==0 && s.mouth==0);
     return 0;
 }
 '''
@@ -119,7 +122,8 @@ int main(void) {
                  '-I',str(ROOT/'components/muse'),str(p/'test.c')]
             if renderer: cmd.append(str(ROOT/'avatar/muse_pixel.c'))
             subprocess.run(cmd+['-lm','-o',str(p/'test')],check=True,capture_output=True,text=True)
-            subprocess.run([str(p/'test')],check=True,capture_output=True,text=True)
+            result=subprocess.run([str(p/'test')],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
 
 if __name__ == '__main__':

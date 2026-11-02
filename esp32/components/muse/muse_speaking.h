@@ -9,17 +9,20 @@
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
+#include <math.h>
 
 /* Normalized, interruptible speaking choreography. Pure C, fixed storage, no
  * clock/random APIs or allocations; the renderer supplies time and audio level.
  * A rest is a real state, not an invitation to fill every frame with motion. */
-enum { MUSE_SPEAK_REST, MUSE_SPEAK_RAISE, MUSE_SPEAK_STEPS, MUSE_SPEAK_OPEN };
+enum { MUSE_SPEAK_REST, MUSE_SPEAK_RAISE_RIGHT, MUSE_SPEAK_STEPS,
+       MUSE_SPEAK_RAISE_LEFT, MUSE_SPEAK_OPEN };
 typedef struct {
     bool active, heard_voice;
     unsigned action, next, side, leader, opener;
     uint32_t seed;
     float time, duration, mode_t, quiet, energy;
     float lift[2], extend[2], inward[2], wrist[2];
+    float mouth, brow, eye_wide, gaze, nod;
 } muse_speaking_t;
 
 static inline float muse_speak_clamp(float x, float lo, float hi)
@@ -55,7 +58,7 @@ static inline void muse_speaking_update(muse_speaking_t *s, bool speaking, float
         s->action = MUSE_SPEAK_REST;
         /* Rotate openers too: several short replies must not always show the
          * same first gesture while never reaching the rest of the sequence. */
-        s->next = MUSE_SPEAK_RAISE + s->opener++ % 3;
+        s->next = MUSE_SPEAK_RAISE_RIGHT + s->opener++ % 4;
         s->time = 0;
         s->duration = .12f;
         s->leader = muse_speak_random(s) > .5f;
@@ -80,12 +83,13 @@ static inline void muse_speaking_update(muse_speaking_t *s, bool speaking, float
             s->time = 0;
             if (s->action == MUSE_SPEAK_REST) {
                 s->action = s->next;
-                s->side = s->leader;
-                s->duration = s->action == MUSE_SPEAK_RAISE ? 2.05f
+                s->side = s->action == MUSE_SPEAK_RAISE_RIGHT ? 1
+                        : s->action == MUSE_SPEAK_RAISE_LEFT ? 0 : s->leader;
+                s->duration = (s->action == MUSE_SPEAK_RAISE_RIGHT || s->action == MUSE_SPEAK_RAISE_LEFT) ? 1.15f
                             : s->action == MUSE_SPEAK_STEPS ? 1.90f : 1.65f;
                 /* Advance on START, not completion. A mid-gesture pause must
                  * settle and continue with a different family on resumption. */
-                s->next = s->action == MUSE_SPEAK_OPEN ? MUSE_SPEAK_RAISE : s->action + 1;
+                s->next = s->action == MUSE_SPEAK_OPEN ? MUSE_SPEAK_RAISE_RIGHT : s->action + 1;
                 if (s->action == MUSE_SPEAK_OPEN) s->leader ^= 1;
             } else {
                 s->action = MUSE_SPEAK_REST;
@@ -94,17 +98,20 @@ static inline void muse_speaking_update(muse_speaking_t *s, bool speaking, float
         }
     }
     float lift[2] = {0}, extend[2] = {0}, inward[2] = {0}, wrist[2] = {0};
+    float brow = 0, eye_wide = 0, gaze = 0, nod = 0;
     if (speaking && !pause && s->action != MUSE_SPEAK_REST) {
         float amplitude = .88f + .12f * s->energy;
-        if (s->action == MUSE_SPEAK_RAISE) {
-            /* Tall, mostly vertical raises: first one paw, then the other. */
-            for (int i = 0; i < 2; i++) {
-                int hand = s->side ^ i;
-                float p = muse_speak_pulse(s->time - i * .98f, .94f, .24f, .30f) * amplitude;
-                lift[hand] = p;
-                extend[hand] = p * .14f;
-                wrist[hand] = (hand ? -1 : 1) * p * .90f;
-            }
+        if (s->action == MUSE_SPEAK_RAISE_RIGHT || s->action == MUSE_SPEAK_RAISE_LEFT) {
+            /* Each raise is independent. The opposite hand is never queued as
+             * the second half of a raise; another movement comes between them. */
+            int hand = s->side;
+            float p = muse_speak_pulse(s->time, 1.10f, .28f, .34f) * amplitude;
+            lift[hand] = p;
+            extend[hand] = p * .14f;
+            wrist[hand] = (hand ? -1 : 1) * p * .90f;
+            brow = .75f * p;
+            gaze = (hand ? 1 : -1) * .65f * p;
+            nod = -.12f * p;
         } else if (s->action == MUSE_SPEAK_STEPS) {
             /* A hand in front of the torso marks three compact beats, moving
              * slightly higher with each point. The support paw stays low. */
@@ -121,6 +128,10 @@ static inline void muse_speaking_update(muse_speaking_t *s, bool speaking, float
             wrist[hand] = (hand ? 1 : -1) * envelope * .75f;
             lift[support] = .12f * envelope;
             inward[support] = .38f * envelope;
+            brow = .30f * envelope + .40f * beat;
+            eye_wide = .25f * beat;
+            gaze = (hand ? 1 : -1) * .25f * envelope;
+            nod = .50f * beat;
         } else {
             /* Open both paws outward together: a broad, balanced silhouette. */
             float p = muse_speak_pulse(s->time, s->duration, .36f, .42f) * amplitude;
@@ -129,6 +140,9 @@ static inline void muse_speaking_update(muse_speaking_t *s, bool speaking, float
                 extend[i] = p;
                 wrist[i] = (i ? 1 : -1) * p * .50f;
             }
+            brow = .85f * p;
+            eye_wide = .80f * p;
+            nod = -.40f * p;
         }
     }
     /* Critically bounded travel, including interrupted preparations and holds.
@@ -144,4 +158,26 @@ static inline void muse_speaking_update(muse_speaking_t *s, bool speaking, float
         if (s->inward[i] < .001f) s->inward[i] = 0;
         if (s->wrist[i] > -.001f && s->wrist[i] < .001f) s->wrist[i] = 0;
     }
+    s->brow += (brow - s->brow) * blend;
+    s->eye_wide += (eye_wide - s->eye_wide) * blend;
+    s->gaze += (gaze - s->gaze) * blend;
+    s->nod += (nod - s->nod) * blend;
+
+    float mouth = speaking ? muse_speak_clamp((s->energy - .035f) * 1.5f, 0, 1) : 0;
+    if (speaking && !s->heard_voice) {
+        /* Main's caption-paced replies have silent PCM. Give them visible
+         * articulation, with varied syllables and a short phrase breath. Once
+         * actual voice is heard, its pauses remain closed instead of being
+         * filled by this fallback. This is a visual rhythm, not phoneme sync. */
+        static const float syllables[] = {.50f, .90f, .65f, .80f, .40f, .75f, .60f};
+        float t = mode_t > .12f ? mode_t - .12f : 0;
+        float syllable = t * 5.2f;
+        unsigned index = (unsigned)syllable;
+        float phase = syllable - index;
+        float phrase = t - floorf(t / 2.8f) * 2.8f;
+        float pulse = muse_speak_pulse(phase, .90f, .18f, .40f);
+        mouth = phrase < 2.38f ? pulse * syllables[index % 7] : 0;
+    }
+    s->mouth += (mouth - s->mouth) * muse_speak_clamp(dt * 22, 0, 1);
+    if (s->mouth < .001f) s->mouth = 0;
 }
