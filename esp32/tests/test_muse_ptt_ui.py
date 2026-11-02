@@ -226,6 +226,10 @@ class StopWatchPTT(unittest.TestCase):
         for board, realtime in ((1, 1), (0, 1), (1, 0)):
             self.run_case('voice', 42, board=board, realtime=realtime)
 
+    def test_short_press_hint_restarts_sleep_clock(self):
+        for board, realtime in ((1, 1), (0, 1), (1, 0)):
+            self.run_case('voice', 43, board=board, realtime=realtime)
+
     def test_explicit_notes_and_other_boards_keep_notes(self):
         self.run_case('voice', 21)
         self.run_case('voice', 20, board=0)

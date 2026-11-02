@@ -86,6 +86,7 @@ void *heap_caps_malloc(size_t n, unsigned caps) { (void)caps; ++allocations; ret
 void *heap_caps_realloc(void *p, size_t n, unsigned caps) { (void)caps; return realloc(p,n); }
 static int pokes;
 static int64_t poked_us, idle_clock_at_idle = -1;
+static bool caption_is_hint;
 void muse_state_set_mode(muse_mode_t m) {
     mode=m;
     if (m==MUSE_MODE_IDLE) idle_clock_at_idle = clock_us - poked_us;   /* what check_sleep() would see */
@@ -98,7 +99,12 @@ void muse_state_set_level(float v) {
 }
 void muse_state_set_progress(float v) { (void)v; }
 void muse_state_set_caption(const char *fmt,...) {
+    caption_is_hint=false;
     va_list ap; va_start(ap,fmt); vsnprintf(caption,sizeof(caption),fmt,ap); va_end(ap);
+}
+void muse_state_set_hint(const char *text) {
+    caption_is_hint=true;
+    snprintf(caption,sizeof(caption),"%s",text);
 }
 void muse_state_poke(void) { ++pokes; poked_us=clock_us; }
 void muse_state_nudge(void) {}
@@ -364,6 +370,17 @@ int main(int argc,char **argv) {
         assert(ptt_held_on_waking()); assert(clock_us>=300000 && !delivered);
         return 0;
     }
+    if (scenario==43) {
+        /* A short-press hint replaces go_idle(), but must still restart the
+         * sleep clock before IDLE so an expired timer cannot blank it. */
+        mode=MUSE_MODE_LISTENING;
+        clock_us=180000000;
+        poked_us=0;
+        too_short();
+        assert(mode==MUSE_MODE_IDLE && idle_clock_at_idle==0);
+        assert(caption_is_hint && !strcmp(caption,"HOLD LONGER TO TALK"));
+        return 0;
+    }
     if (scenario==42) {
         /* An active turn counts as activity for auto-sleep (#281): however a
          * long turn ends (the reply done, a capped REPLY INCOMPLETE, an
@@ -386,6 +403,7 @@ int main(int argc,char **argv) {
                 go_idle("");
             }
             assert(mode==MUSE_MODE_IDLE && idle_clock_at_idle==0);
+            assert(!caption_is_hint);
             assert(!strcmp(caption, ways[i].text));
         }
         return 0;
