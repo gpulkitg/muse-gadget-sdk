@@ -520,10 +520,10 @@ endif
     config MUSE_TTS_VOICE_ID
         string "ElevenLabs voice ID"
         depends on MUSE_TTS_ELEVENLABS
-        default "21m00Tcm4TlvDq8ikWAM"
+        default "XrExE9yKIg1WjnnlVkGX"
         help
             The voice to speak replies with. The default is the premade
-            voice Rachel; paste any voice ID from your ElevenLabs Voice
+            voice Matilda; paste any voice ID from your ElevenLabs Voice
             Library instead.
 
     config MUSE_TTS_MODEL
