@@ -72,8 +72,5 @@ CONFIG_PM_PROFILING=y
 #   interrupted mid-sentence. MUSE_VOICE_AEC_REF_DELAY_CHUNKS stays at its
 #   default of 2, measured on the Waveshare 2.06; the 1.75C's own delay
 #   still needs a bench check.
-# - reply notification: flash the screen and ping when a reply arrives,
-#   for a board without a vibration motor (#424).
 CONFIG_MUSE_REALTIME_VOICE=y
 CONFIG_MUSE_VOICE_SOFTWARE_AEC=y
-CONFIG_MUSE_REPLY_NOTIFY=y
