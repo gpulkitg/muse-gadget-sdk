@@ -97,6 +97,7 @@
 #if CONFIG_MUSE_ENABLED
 #include "muse_glue.h"
 #include "muse_input.h"
+#include "muse_wakeword_glue.h"
 // Muse joins Wi-Fi from its own settings, before or without pairing.
 #define WIFI_WITHOUT_PAIRING 1
 #else
@@ -1973,6 +1974,29 @@ static cJSON *bug_report_command(
 
 #endif  // CONFIG_HOMEHUB_BLE_COMMANDS
 
+#if CONFIG_MUSE_WAKEWORD_ENABLE
+/* Muse may only turn listening off. Turning it on is the device's own
+ * choice (Settings, the quick menu, serial), so no remote command can make
+ * the gadget start sending audio. */
+static cJSON *wakeword_disable_command(void) {
+    muse_wakeword_set_enabled(false);
+    muse_wakeword_status_t st;
+    muse_wakeword_status(&st);
+    cJSON *result = cJSON_CreateObject();
+    cJSON *payload = cJSON_CreateObject();
+    if (!result || !payload) {
+        cJSON_Delete(result);
+        cJSON_Delete(payload);
+        return command_error("out_of_memory", "failed to allocate wake word result");
+    }
+    cJSON_AddBoolToObject(payload, "enabled", st.enabled);
+    cJSON_AddBoolToObject(payload, "listening", st.listening);
+    cJSON_AddBoolToObject(result, "ok", true);
+    cJSON_AddItemToObject(result, "payload", payload);
+    return result;
+}
+#endif
+
 static cJSON *on_ws_command(
     const char *command, cJSON *params, const char *request_id,
     noise_ctrl_session_generation_t session_generation) {
@@ -2062,6 +2086,11 @@ static cJSON *on_ws_command(
 #if CONFIG_HOMEHUB_WAVESHARE_154G_SHTC3
     if (strcmp(command, "sensors.read") == 0) {
         return waveshare_154g_shtc3_command();
+    }
+#endif
+#if CONFIG_MUSE_WAKEWORD_ENABLE
+    if (strcmp(command, "wakeword.disable") == 0) {
+        return wakeword_disable_command();
     }
 #endif
     if (strcmp(command, "device.reset_vm") == 0) {
@@ -2930,12 +2959,15 @@ void app_run(void) {
         ble_coex_set_active(true);
         ui_set_ble("companion");
 #endif
-#if CONFIG_MUSE_ENABLED && CONFIG_SPIRAM && !CONFIG_MUSE_BOARD_CROWPANEL_ADVANCE_43
+#if CONFIG_MUSE_ENABLED && CONFIG_SPIRAM && !CONFIG_MUSE_BOARD_CROWPANEL_ADVANCE_43 && \
+    !CONFIG_MUSE_BOARD_WAVESHARE_S3_175 && !CONFIG_MUSE_BOARD_WAVESHARE_S3_175C
         // Muse may turn on its BLE companion later. The controller needs a
         // 30 KB internal block that TLS and the VM session leave fragmented,
         // so bring the stack up now; it stays silent until advertising is on.
         // The CrowPanel starts it lazily instead, after muse_app_run() has
-        // reserved its internal I2S DMA buffers.
+        // reserved its internal I2S DMA buffers. So do the 1.75 and 1.75C:
+        // the idle stack leaves no 8 KB block for the muse_vm task and chat
+        // never connects (#351).
         start_ble_setup_server_if_needed();
 #endif
     }
