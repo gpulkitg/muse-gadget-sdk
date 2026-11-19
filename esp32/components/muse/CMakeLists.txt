@@ -155,8 +155,12 @@ if(CONFIG_MUSE_ENABLED)
         list(APPEND srcs "boards/board_crowpanel_advance_43.c")
     elseif(CONFIG_MUSE_BOARD_M5STACK_STICKC_PLUS2)
         list(APPEND srcs "boards/board_m5stack_stickc_plus2.c")
-    elseif(CONFIG_MUSE_BOARD_M5STACK_STOPWATCH)
+    elseif(CONFIG_MUSE_BOARD_M5STACK_STOPWATCH_FAMILY)
         list(APPEND srcs "boards/board_m5stack_stopwatch.c" "boards/muse_lcd_bands.c")
+        if(CONFIG_CAPABILITIES_REGISTRY)
+            # BMI270 registry/lifecycle adapter; vendor driver is a gated managed dependency.
+            list(APPEND srcs "boards/bmi270_device.c" "boards/imu_events.c")
+        endif()
     elseif(CONFIG_MUSE_BOARD_SEEED_XIAO_S3_147)
         list(APPEND srcs "boards/board_seeed_xiao_s3_147.c")
     elseif(CONFIG_MUSE_BOARD_M5STACK_CORES3)
@@ -236,7 +240,7 @@ endif()
 
 set(muse_priv_requires
     esp_timer esp_driver_usb_serial_jtag esp_psram nvs_flash esp_pm esp_event esp_netif
-    bt esp-tls mbedtls esp_app_format esp_http_client
+    bt esp-tls mbedtls esp_app_format esp_http_client network_proxy
     noise_core minimp3 muse_vstream tinyh264 libvpx_vp8 muse_mirror capabilities_registry
     esp_lcd esp_adc esp_driver_i2s esp_driver_ledc esp_driver_spi esp_driver_uart esp_wifi
     esp_driver_pcnt efuse

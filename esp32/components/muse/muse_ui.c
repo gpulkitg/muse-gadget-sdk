@@ -226,7 +226,7 @@ static lv_obj_t *s_meter[METER_SEGS];
 static lv_obj_t *s_speaker;
 static lv_obj_t *s_speaker_icon;
 static lv_obj_t *s_aux_icon;
-#if CONFIG_MUSE_BOARD_M5STACK_STOPWATCH && CONFIG_MUSE_REALTIME_VOICE
+#if CONFIG_MUSE_BOARD_M5STACK_STOPWATCH_FAMILY && CONFIG_MUSE_REALTIME_VOICE
 static lv_obj_t *s_talk_hint_lbl, *s_end_hint_lbl;
 #define CALL_HINT_OUT 26   /* px outwards from the rim icon's x: the 320 px avatar's sparkles reach ~125 */
 #endif
@@ -1800,7 +1800,7 @@ static void build_overlays(void)
         lv_obj_align(s_ptt_hint, muse_board->talk_hint.align, muse_board->talk_hint.x, muse_board->talk_hint.y);
         s_spk_hint = make_control_icon(scr, &muse_board->speaker_hint, LV_SYMBOL_VOLUME_MID, 0xffd060);
         s_pwr_hint = make_control_icon(scr, &muse_board->power_hint, LV_SYMBOL_POWER, 0xff8080);
-#if CONFIG_MUSE_BOARD_M5STACK_STOPWATCH && CONFIG_MUSE_REALTIME_VOICE
+#if CONFIG_MUSE_BOARD_M5STACK_STOPWATCH_FAMILY && CONFIG_MUSE_REALTIME_VOICE
         /* During a push-to-talk call: what yellow does now, and that blue
          * hangs up. Under each rim icon, pushed out towards the rim, clear of
          * the avatar and its sparkles (CALL_HINT_OUT). */
@@ -2195,7 +2195,7 @@ static void update_status(muse_mode_t mode, float now)
         uint32_t working = muse_pixel_working_accent();
         if (working) accent = working;   /* the ring and label match the working avatar */
     }
-#if CONFIG_MUSE_BOARD_M5STACK_STOPWATCH && CONFIG_MUSE_REALTIME_VOICE
+#if CONFIG_MUSE_BOARD_M5STACK_STOPWATCH_FAMILY && CONFIG_MUSE_REALTIME_VOICE
     const char *call_name = muse_voice_call_label();
     const char *hint = muse_voice_call_hint();
     if (call_name) name = call_name;
@@ -2642,17 +2642,25 @@ void muse_ui_preview_brightness(int pct)
 
 bool muse_ui_image_size(int *w, int *h)
 {
-    if (!s_ready || !heap_caps_get_total_size(MALLOC_CAP_SPIRAM)) {
+    if (!heap_caps_get_total_size(MALLOC_CAP_SPIRAM)) {
         return false;
     }
-    *w = s_w;
-    *h = s_h;
-    return true;
+    if (s_ready) {
+        *w = s_w;
+        *h = s_h;
+        return true;
+    }
+    if (muse_board && muse_board->width > 0 && muse_board->height > 0) {
+        *w = muse_board->width;
+        *h = muse_board->height;
+        return true;
+    }
+    return false;
 }
 
 int muse_ui_image_bits(void)
 {
-    return muse_board->epaper ? 2 : 16;
+    return (muse_board && muse_board->epaper) ? 2 : 16;
 }
 
 /* Floyd-Steinberg to four grays, in place: each pixel becomes black, 85, 170
@@ -2686,7 +2694,11 @@ static void dither_gray4_565(uint16_t *px, int w, int h, int16_t *err)
 
 void muse_ui_image_done(void)
 {
-    if (!s_ready || muse_ui_image_bits() != 2) {
+    if (!s_ready) {
+        return;
+    }
+    muse_state_poke();
+    if (muse_ui_image_bits() != 2) {
         return;   /* a colour panel shows each rectangle as it comes */
     }
     int16_t *err = malloc(2 * (size_t)(s_w + 2) * sizeof(int16_t));
@@ -2709,6 +2721,7 @@ bool muse_ui_image_draw(int x, int y, int w, int h, const uint16_t *pixels)
         return false;
     }
     xSemaphoreTake(s_image_mutex, portMAX_DELAY);
+    bool wake = false;
     if (!s_image_buf) {
         /* The first rectangle of an image: a black screen to draw onto. */
         s_image_buf = heap_caps_calloc((size_t)s_w * s_h, sizeof(uint16_t), MALLOC_CAP_SPIRAM);
@@ -2716,6 +2729,18 @@ bool muse_ui_image_draw(int x, int y, int w, int h, const uint16_t *pixels)
             xSemaphoreGive(s_image_mutex);
             return false;
         }
+        wake = true;
+    }
+#if CONFIG_MUSE_WATCHER_CAMERA
+    else if (!watcher_camera_preview_active()) {
+        wake = true;
+    }
+#else
+    else {
+        wake = true;
+    }
+#endif
+    if (wake) {
         /* Now, not when it's shown: asleep, the display may be paused (muse_input.c). */
         muse_state_set_asleep(false);
     }

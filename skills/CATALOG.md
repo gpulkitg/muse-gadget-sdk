@@ -1,6 +1,6 @@
 # Skill Catalog
 
-59 active skills: 57 device/family skills, one shared Google Cast skill, and one Linux wake-word setup skill.
+61 active skills: 59 device/family skills, one shared Google Cast skill, and one Linux wake-word setup skill.
 Use the matching device skill for model compatibility, setup, safety and supported operations.
 
 ## Gadget setup
@@ -44,6 +44,7 @@ Use the matching device skill for model compatibility, setup, safety and support
 - [Roku TVs and players](gadget-roku-tvs-and-players/SKILL.md) — local remote, apps, text entry and power over ECP; network-control setting must allow it.
 - [Samsung Tizen TVs](gadget-samsung-tizen-tvs/SKILL.md) — local remote and model-specific Frame Art.
 - [Sonos speakers](gadget-sonos-speakers/SKILL.md) — playback, volume and grouping.
+- [Sony Bravia TVs](gadget-sony-bravia-tvs/SKILL.md) — local REST control of power, volume, inputs and apps with Pre-Shared Key authentication.
 - [VIZIO D40f-G9](gadget-vizio-d40f-g9/SKILL.md) — SmartCast management; Cast when advertised.
 
 ## Printers and appliances
@@ -56,6 +57,7 @@ Use the matching device skill for model compatibility, setup, safety and support
 - [Moonraker 3D printers](gadget-moonraker-3d-printers/SKILL.md) — existing-service status and print/job controls.
 - [Bambu Lab printers](gadget-bambu-lab-printers/SKILL.md) — local status, filament, P2S chamber-camera snapshots and monitoring, and owner-approved prints in Developer Mode.
 - [HomeWhiz laundry](gadget-homewhiz-laundry/SKILL.md) — cloud only; needs internet and a HomeWhiz account: washer and dryer cycle state, read-only.
+- [VeSync purifiers](gadget-vesync-purifier/SKILL.md) — cloud only; needs internet and a VeSync account: Levoit purifier power, mode, fan level and filter life, guarded per exact model.
 
 ## Vacuums
 
