@@ -16,6 +16,10 @@ dependencies:
   idf:
     version: ">=5.5"
   espressif/cjson: "~1.7"
+  joltwallet/littlefs:
+    version: "^1.23"
+    rules:
+      - if: '$CONFIG{MUSE_AVATAR_DEPS} == "y"'
   # Optional software echo cancellation on ESP32-S3 voice boards.
   espressif/esp-sr:
     version: "==2.5.2"
@@ -93,7 +97,7 @@ dependencies:
   espressif/m5stack_core_s3:
     version: "4.1.0"
     rules:
-      - if: "$CONFIG{MUSE_BOARD_ID} == \"m5stack_cores3\""
+      - if: "$CONFIG{MUSE_BOARD_ID} in [\"m5stack_cores3\", \"m5stack_cores3lite\"]"
   waveshare/esp32_c6_touch_amoled_1_8:
     version: "^1.0.0"
     rules:

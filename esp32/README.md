@@ -245,6 +245,10 @@ It works on boards with the full UI, using their existing console commands.
 
 ## Boards
 
+The experimental [My Muse avatar source](docs/avatar-sources.md) can sync the
+paired Muse's current still image on supported LVGL/PSRAM builds. It is off by
+default and adds a runtime choice between Built-in and My Muse in Settings.
+
 On LVGL touch-screen boards with speaker audio, drag up or down on the main
 avatar or its background to raise or lower volume. A temporary percentage
 appears above a vertical filled bar while dragging; lifting your finger saves
@@ -271,11 +275,13 @@ serial logs because its vendor LED ring is not a Muse status indicator.
 | Waveshare ESP32-C6-LCD-1.47 | Status on screen, images | `tools/board.sh waveshare-c6-lcd-147 build` |
 | ESP32-2432S028 Cheap Yellow Display (experimental) | Status on screen, images | `tools/board.sh esp32-2432s028 build` |
 | ESP32-C3 with 0.42" OLED | Status and agent name as text | `tools/board.sh c3-oled-042 build` |
+| M5Stack CoreMatrix | Status and 1-bit images on a 16×16 white LED matrix, and a button | `tools/board.sh m5stack-corematrix build` |
 | Seeed SenseCAP Indicator | Status on a 4" screen, images | `tools/board.sh sensecap-indicator build` |
 | Waveshare ESP32-S3-1.54inch-ePaper V2 | Status on a 1.54" e-paper, black and white | `tools/board.sh waveshare-s3-epaper-154 build` |
 | Waveshare ESP32-S3-ePaper-1.54G | Status on a 1.54" e-paper, four colours, push-to-talk | `tools/board.sh waveshare-s3-epaper-154g build` |
 | Seeed reTerminal E1001 | Status on a 7.5" e-paper, black and white images | `tools/board.sh reterminal-e1001 build` |
 | Seeed reTerminal E1002 | Status on a 7.3" e-paper, six-colour images | `tools/board.sh reterminal-e1002 build` |
+| Seeed reTerminal E1003 | Status on a 10.3" e-paper, black and white images | `tools/board.sh reterminal-e1003 build` |
 | Seeed reTerminal Sticky (experimental) | 3.97" portrait e-paper UI on FreeInk, touch, PDM voice notes, battery, SD and SHT40 | `tools/board.sh reterminal-sticky build` |
 | Seeed reTerminal Sticky Link status (experimental) | 3.97" e-paper status screen and SHT40 only; no Muse UI | `tools/board.sh reterminal-sticky-link build` |
 | Home Assistant Voice Preview Edition | Status on the LED ring, push-to-talk, volume dial | `tools/board.sh home-assistant-voice build` |
@@ -284,10 +290,12 @@ serial logs because its vendor LED ring is not a Muse status indicator.
 | Waveshare ESP32-S3-Touch-AMOLED-1.75C | UI, push-to-talk, settings, images | see [`AGENTS.md`](AGENTS.md#boards-with-the-full-ui-by-hand) |
 | Waveshare ESP32-S3-Touch-AMOLED-1.75 | UI, push-to-talk, settings, images | see [`AGENTS.md`](AGENTS.md#boards-with-the-full-ui-by-hand) |
 | Waveshare ESP32-S3-Touch-LCD-1.85B | UI, touch, settings; push-to-talk and images (unverified) | `tools/muse/board.sh build 185b` |
+| Waveshare ESP32-S3-Touch-LCD-1.85C | UI, touch, push-to-talk, settings, images | `tools/muse/board.sh build 185c` |
 | Waveshare ESP32-S3-Touch-LCD-1.9 | UI, touch, push-to-talk, settings, images (unverified) | see [`AGENTS.md`](AGENTS.md#boards-with-the-full-ui-by-hand) |
 | Waveshare ESP32-S3-Touch-AMOLED-2.16 | UI, push-to-talk, settings, images | see [`AGENTS.md`](AGENTS.md#boards-with-the-full-ui-by-hand) |
 | Waveshare ESP32-S3-Touch-AMOLED-2.06 | UI, touch, push-to-talk, settings, images (unverified) | [S3 2.06 setup](devices/waveshare-s3-206.md) |
 | Waveshare ESP32-S3-Touch-AMOLED-1.43C | UI, push-to-talk, settings, images (touch, mics and battery unverified) | [1.43C notes](devices/README.md#waveshare-esp32-s3-touch-amoled-143c) |
+| Espressif ESP-Mosaico (experimental) | UI, touch, AI-button push-to-talk, settings, battery; builds with ESP-IDF master and installs through Vibe Mode | [Setup](devices/README.md#espressif-esp-mosaico-experimental) |
 | OSTB EchoEar-2ST (experimental) | UI, touch microphone and pairing confirmation, local audio | [EchoEar setup](devices/ostb-echoear-2st.md) |
 | Espressif ESP32-S3-BOX-3 | UI, touch, push-to-talk, settings, images | [BOX-3 setup](devices/esp32-s3-box-3.md) |
 | ALIENTEK ATK-DNESP32S3-BOX V1.1 | UI, push-to-talk, two-key menu, images | `tools/muse/board.sh build atk-box`, see [setup](devices/atk-dnesp32s3-box.md) |
@@ -304,6 +312,7 @@ serial logs because its vendor LED ring is not a Muse status indicator.
 | M5Stack TriviaPOD (experimental) | UI, touch, push-to-talk, settings; sleep, wake and battery unverified | `tools/muse/board.sh build triviapod` |
 | [Seeed XIAO ESP32-S3 1.47 Touch Display](devices/seeed-xiao-s3-147.md) | UI, USR1 push-to-talk, touch, settings, images; PDM mic, no speaker | `tools/muse/board.sh build xiao147` |
 | M5Stack CoreS3 | UI, touch, PWR push-to-talk, settings, images | see [`AGENTS.md`](AGENTS.md#boards-with-the-full-ui-by-hand) |
+| M5Stack CoreS3 Lite | UI, touch, PWR push-to-talk, settings, images | see [`AGENTS.md`](AGENTS.md#boards-with-the-full-ui-by-hand) |
 | Guition JC3248W535 | UI, touch, settings, images, speaker; push-to-talk with an added PDM or I2S mic | `tools/muse/board.sh build jc3248w535` |
 | Waveshare ESP32-S3-Touch-LCD-7 | UI, touch, settings, images; no built-in audio | `tools/muse/board.sh build lcd7` |
 | Waveshare ESP32-S3-Touch-LCD-1.28 | UI, touch, settings, images; no built-in audio | `tools/muse/board.sh build lcd128` |
@@ -398,7 +407,7 @@ To let Muse run a small app of its own on a board's screen,
 build it with `MUSE_APPS=1 tools/muse/board.sh build <board>`: Muse writes a
 WebAssembly app on its VM, and the board's `app.run` command loads it and runs
 it in place of the face, with LVGL widgets, the buttons and touch, the chat
-and the board's sensors (apps API 1.1, [`components/muse_apps/sdk/api/`](components/muse_apps/sdk/api/README.md)).
+and the board's sensors (apps API 1.2, [`components/muse_apps/sdk/api/`](components/muse_apps/sdk/api/README.md)).
 `app.install` keeps an app on the board, for its launcher (Apps, in Settings).
 [`components/muse_apps/sdk/README.md`](components/muse_apps/sdk/README.md) shows how to write one and how to ask Muse
 for one, and [`AGENTS.md`](AGENTS.md#webassembly-apps) how it works.
@@ -423,8 +432,19 @@ See [reply option selection](docs/reply-option-selection.md) for supported
 prompts, USB diagnostics, validation, and the current server limitation on
 synchronizing selected-button state with the phone.
 
-The on-device "Hey Muse" wake word (off by default; not enabled on any
-board yet) runs its model with the ExecuTorch runtime and ESP-NN delegate
+To start a voice note by saying "Hey Muse" instead of holding the talk
+button, build a board that has PSRAM and the LVGL UI (not e-paper) with
+`MUSE_WAKEWORD=1 tools/muse/board.sh build|flash <board>`; it has run on
+the SenseCAP Watcher and the ESP32-S3-BOX-3. Then turn listening on at the
+device: **Sound > Wake word** in Settings, the quick menu's **Wake word** row
+on button boards, or `>wake.on` over serial. The web flasher's images don't
+include it. While listening, the microphone stays powered when the screen
+sleeps, so battery life is much shorter.
+[`components/muse_wakeword/README.md`](components/muse_wakeword/README.md)
+has the details and costs.
+
+The wake word (off by default; no board overlay enables it) runs its model
+with the ExecuTorch runtime and ESP-NN delegate
 and TensorFlow Lite Micro's microfrontend, which come from the ESP
 Component Registry only into builds with `MUSE_WAKEWORD_ENABLE`;
 [`docs/executorch.md`](docs/executorch.md) says how the pins are updated,
@@ -594,10 +614,22 @@ their upstream licenses:
   driver based on the Seeed-reTerminal-E10xx-Firmware refresh sequence (the
   Sticky's Link status profile), is MIT and retains the source's copyright and
   license notice.
+- [`main/epd_it8951.c`](main/epd_it8951.c), the reTerminal E1003 IT8951
+  driver with command framing and one-bit mode adapted from Seeed_GFX2, is
+  MIT and retains the source's copyright and license notice.
+- The SSD1681 initialization sequence and waveform LUT in
+  [`main/epd_ssd1681.c`](main/epd_ssd1681.c), the Waveshare 1.54" V2
+  e-paper driver, are from Waveshare's XiaoZhi V2 source for the board
+  (78/xiaozhi-esp32 with Waveshare's board), which is MIT. See
+  [`devices/licenses/xiaozhi-esp32.txt`](devices/licenses/xiaozhi-esp32.txt).
 - The ST7789 tuning table in
   [`components/muse/boards/board_atk_dnesp32s3_box2.c`](components/muse/boards/board_atk_dnesp32s3_box2.c),
   from 78/xiaozhi-esp32's ATK-DNESP32S3-BOX2 board, is MIT. See
   [`devices/licenses/xiaozhi-esp32.txt`](devices/licenses/xiaozhi-esp32.txt).
+- The ST77916 initialization sequence in
+  [`components/muse/boards/waveshare_s3_185c/st77916_init_185c.h`](components/muse/boards/waveshare_s3_185c/st77916_init_185c.h),
+  from 78/xiaozhi-esp32's Waveshare ESP32-S3-Touch-LCD-1.85C board, is MIT.
+  See [`devices/licenses/xiaozhi-esp32.txt`](devices/licenses/xiaozhi-esp32.txt).
 - The JD9853A initialization sequence in
   [`components/muse/boards/board_seeed_xiao_s3_147.c`](components/muse/boards/board_seeed_xiao_s3_147.c),
   adapted from Seeed-Studio/Seeed_GFX2, is MIT. See
@@ -606,6 +638,10 @@ their upstream licenses:
   [`components/muse/boards/board_m5stack_atoms3.c`](components/muse/boards/board_m5stack_atoms3.c),
   from M5GFX's `Panel_GC9107` (LovyanGFX), is FreeBSD. See
   [`devices/licenses/LovyanGFX.txt`](devices/licenses/LovyanGFX.txt).
+- The AXS15231B initialization sequence in
+  [`components/muse/boards/board_guition_jc3248w535.c`](components/muse/boards/board_guition_jc3248w535.c),
+  Arduino_GFX 1.4.9's `axs15231b_init_operations`, is BSD-2-Clause. See
+  [`devices/licenses/Arduino_GFX.txt`](devices/licenses/Arduino_GFX.txt).
 - [`components/esp_lcd_gc9107`](components/esp_lcd_gc9107), Espressif's GC9107
   panel driver 2.0.0 from the ESP Component Registry with one change to build
   on ESP-IDF 6, is Apache-2.0 under Espressif's copyright. See
@@ -616,10 +652,19 @@ their upstream licenses:
 - [`components/muse/boards/waveshare_s3_185b_init.h`](components/muse/boards/waveshare_s3_185b_init.h),
   the Waveshare 1.85B panel initialization tables from Waveshare's BSP, is
   Apache-2.0, as its header says.
+- The CO5300 initialization sequence in
+  [`components/muse/boards/board_esp_mosaico.c`](components/muse/boards/board_esp_mosaico.c),
+  the vendor init from Espressif's ESP-Mosaico BSP, is Apache-2.0 under
+  Espressif's copyright, as the file's header says.
 - [`components/muse/fonts/`](components/muse/fonts/), the caption and
   button-menu fonts, are subsets of GNU Unifont (SIL OFL 1.1, or GPL-2.0+ with
   the font embedding exception), Noto Sans SC (SIL OFL 1.1) and Montserrat
   Medium (SIL OFL 1.1); see its README.
+- [`components/muse/fonts/muse_font_emoji_16.c`](components/muse/fonts/muse_font_emoji_16.c),
+  the captions' emoji (`CONFIG_MUSE_EMOJI`), are 190 Twemoji v16.0.1 graphics
+  by Twitter, Inc, jdecked and other contributors, scaled to 16 px: CC-BY 4.0.
+  See [`components/muse/fonts/LICENSE-twemoji.txt`](components/muse/fonts/LICENSE-twemoji.txt)
+  and its README.
 - [`main/fonts/epaper_154g_caption_font.h`](main/fonts/epaper_154g_caption_font.h),
   the Waveshare 1.54G's reply font, is a subset of GNU Unifont 16.0.04 (SIL OFL
   1.1, or GPL-2.0+ with the font embedding exception); see
@@ -635,6 +680,11 @@ their upstream licenses:
   copyright, with Google's patent grant. See
   [`components/libvpx_vp8/LICENSE`](components/libvpx_vp8/LICENSE) and
   [`PATENTS`](components/libvpx_vp8/PATENTS).
+- libwebp v1.6.0's WebP decoder, built in with the opt-in avatar sync
+  (`CONFIG_MUSE_AVATAR_SYNC`) from a pinned archive fetched at build time
+  ([`cmake/avatar_webp.cmake`](cmake/avatar_webp.cmake)), is BSD-3-Clause
+  under Google's copyright, with Google's patent grant. See
+  [`licenses/libwebp.txt`](licenses/libwebp.txt).
 - [`components/muse_wakeword/models/hey_muse.pte`](components/muse_wakeword/models),
   the opt-in wake word model, was trained for this SDK on public-domain, CC0
   and CC BY data; [`ATTRIBUTION.md`](components/muse_wakeword/models/ATTRIBUTION.md)

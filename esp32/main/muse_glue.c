@@ -15,6 +15,11 @@
  */
 
 #include "muse_glue.h"
+#include "sdkconfig.h"
+#if CONFIG_MUSE_AVATAR_SYNC
+#include "avatar_sync.h"
+#include "muse_avatar.h"
+#endif
 
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +46,7 @@
 #if CONFIG_CAPABILITIES_REGISTRY
 #include "board_capabilities.h"
 #endif
+#include "token_fp.h"
 #include "stack_monitor.h"
 #include "wifi_known.h"
 #include "network_proxy_tls.h"
@@ -412,7 +418,7 @@ static int op_wifi_scan_results(muse_wifi_ap_t *out, int max, uint32_t *gen) {
     return n;
 }
 
-// ---- BLE, Hatch, setup -------------------------------------------------------
+// ---- BLE, Muse, setup --------------------------------------------------------
 
 static void op_ble_apply(void) {
     keeper_kick(KEEP_BLE);
@@ -435,7 +441,8 @@ static bool op_hatch_vm(const char *want_vm, char *vm_id, size_t id_cap, char *v
 // needs a restart, as when it's set over serial (sdk_token_console.h).
 static bool op_sdk_token_set(const char *token) {
     if (!identity_set_sdk_token(token)) return false;
-    ESP_LOGI(TAG, "SDK token %.12s set in settings, restarting to use it", token);
+    char fp[TOKEN_FP_TEXT_LEN];
+    ESP_LOGI(TAG, "SDK token (%s) set in settings, restarting to use it", token_fp_text(token, fp));
     esp_restart();
     return true;
 }
@@ -745,10 +752,17 @@ static void boot_task(void *arg) {
     vTaskDelete(NULL);
 }
 
-#if CONFIG_MUSE_WASM_APPS
+#if CONFIG_MUSE_WASM_APPS || CONFIG_MUSE_AVATAR_SYNC
 // The console's setup lines: the SDK token, then the app loader (muse_apps.h).
 static bool console_line(const char *line) {
-    return sdk_token_console_command(line) || muse_apps_console(line);
+    if (sdk_token_console_command(line)) return true;
+#if CONFIG_MUSE_AVATAR_SYNC
+    if (avatar_sync_console(line)) return true;
+#endif
+#if CONFIG_MUSE_WASM_APPS
+    if (muse_apps_console(line)) return true;
+#endif
+    return false;
 }
 #endif
 
@@ -758,9 +772,11 @@ void muse_glue_start(void) {
     muse_input_power_init();
     s_ready = xEventGroupCreate();
     muse_link_register(&s_ops);
-#if CONFIG_MUSE_WASM_APPS
+#if CONFIG_MUSE_WASM_APPS || CONFIG_MUSE_AVATAR_SYNC
     muse_input_set_console_hook(console_line);
+#if CONFIG_MUSE_WASM_APPS
     muse_apps_start(noise_ctrl_send_command_result);
+#endif
 #else
     muse_input_set_console_hook(sdk_token_console_command);
 #endif
@@ -823,6 +839,11 @@ void muse_glue_led_state(led_state_t state) {
             break;
     }
     muse_link_set_state(st);
+#if CONFIG_MUSE_AVATAR_SYNC
+    if (state == LED_STATE_UNPAIRED) muse_avatar_clear();
+    if (state == LED_STATE_UNPAIRED || state == LED_STATE_VM_SWITCHING || state == LED_STATE_PAIRING_CONFIRM_REQUIRED)
+        muse_avatar_pairing_changed();
+#endif
     // Pairing, provisioning and unpair all move the LED; pick up their config.
     keeper_kick(KEEP_RELOAD);
 }

@@ -14,7 +14,7 @@
 
 # Muse: the voice companion UI that runs beside Home Link on boards with a
 # display (CONFIG_MUSE_BOARD_*). Link-only builds register an empty component,
-# except the Voice PE, which borrows the Hatch voice session.
+# except the Voice PE, which borrows the Muse voice session.
 #
 # Requirements are resolved before Kconfig is known, so everything any board
 # needs is listed unconditionally. Managed components (LVGL, codecs, BSPs) come
@@ -39,9 +39,21 @@ if(CONFIG_MUSE_ENABLED)
         "muse_lang.c"
         "muse_link.c"
         "muse_ble.c")
+    if(CONFIG_MUSE_UI_THEME)
+        list(APPEND srcs "muse_theme.c" "muse_theme_policy.c" "muse_theme_lvgl.c")
+    endif()
     if(CONFIG_MUSE_WAKEWORD_ENABLE)
         # Wake word tap and task; without it, muse_wakeword_glue.h's inline stubs.
         list(APPEND srcs "muse_wakeword_glue.c")
+    endif()
+    if(CONFIG_MUSE_AVATAR_SYNC)
+        list(APPEND srcs "muse_avatar_render.c")
+        if(CONFIG_MUSE_UI_THEME)
+            list(APPEND srcs "muse_avatar_background.c" "muse_avatar_theme.c")
+        endif()
+    endif()
+    if(CONFIG_MUSE_MOTION_GESTURES)
+        list(APPEND srcs "muse_motion.c" "muse_motion_core.c" "boards/qmi8658_motion.c")
     endif()
     if(CONFIG_MUSE_BOARD_SENSECAP_WATCHER OR CONFIG_MUSE_LATEST_REPLY)
         list(APPEND srcs "muse_review.c")
@@ -60,6 +72,12 @@ if(CONFIG_MUSE_ENABLED)
     if(CONFIG_MUSE_HATCH)
         list(APPEND srcs "muse_chat.c" "muse_account_api.c" "muse_chat_session.cpp" "muse_options_json.c")
         list(APPEND embed "test_reply.mp3")   # muse_hatch_mp3_selftest
+        if(CONFIG_MUSE_RESEND_NOTES)
+            list(APPEND srcs "muse_resend.c")   # when a note that didn't send goes again
+        endif()
+        if(CONFIG_MUSE_PHOTO_NOTES)
+            list(APPEND srcs "muse_photo_note.c" "muse_chat_image.c")   # a photo with each voice note
+        endif()
         if(CONFIG_MUSE_REALTIME_VOICE)
             list(APPEND srcs "muse_voice_call.cpp" "muse_voice_call_core.c")
             if(CONFIG_MUSE_VOICE_SOFTWARE_AEC)
@@ -77,6 +95,9 @@ if(CONFIG_MUSE_ENABLED)
     endif()
     if(CONFIG_MUSE_LATIN_FONT)
         list(APPEND srcs "fonts/muse_font_latin_16.c")   # captions with accented letters
+    endif()
+    if(CONFIG_MUSE_EMOJI)
+        list(APPEND srcs "fonts/muse_font_emoji_16.c")   # captions' emoji
     endif()
     if(CONFIG_MUSE_UI_LANG_VI)
         # Montserrat's Vietnamese letters, for the menu and the pairing card
@@ -166,7 +187,7 @@ if(CONFIG_MUSE_ENABLED)
         endif()
     elseif(CONFIG_MUSE_BOARD_SEEED_XIAO_S3_147)
         list(APPEND srcs "boards/board_seeed_xiao_s3_147.c")
-    elseif(CONFIG_MUSE_BOARD_M5STACK_CORES3)
+    elseif(CONFIG_MUSE_BOARD_M5STACK_CORES3 OR CONFIG_MUSE_BOARD_M5STACK_CORES3LITE)
         list(APPEND srcs "boards/board_m5stack_cores3.c")
     elseif(CONFIG_MUSE_BOARD_M5STACK_CORE2)
         list(APPEND srcs "boards/board_m5stack_core2.c")
@@ -200,9 +221,16 @@ if(CONFIG_MUSE_ENABLED)
     elseif(CONFIG_MUSE_BOARD_WAVESHARE_S3_LCD_35)
         list(APPEND srcs "boards/board_waveshare_s3_lcd_35.c")
     endif()
+    if(CONFIG_MUSE_VIDEO OR CONFIG_MUSE_AVATAR_ANIMATIONS)
+        list(APPEND srcs "muse_vdec.c")
+    endif()
+    if(CONFIG_MUSE_AVATAR_ANIMATIONS)
+        list(APPEND srcs "muse_avatar_motion.c" "muse_avatar_pack.c")
+    endif()
     if(CONFIG_MUSE_VIDEO)
+        list(APPEND srcs "muse_yuv.c")
         # Phone camera: decode and draw (muse_video), and the transports that feed it.
-        list(APPEND srcs "muse_video.c" "muse_vdec.c" "muse_yuv.c")
+        list(APPEND srcs "muse_video.c")
         if(CONFIG_IDF_TARGET_ESP32S3)
             list(APPEND srcs "muse_yuv_pie.S")   # the S3's SIMD colour conversion
         elseif(CONFIG_IDF_TARGET_ESP32S31)
@@ -230,7 +258,7 @@ if(CONFIG_MUSE_ENABLED)
         endif()
     endif()
 elseif(CONFIG_HOMEHUB_VOICE)
-    # The Voice PE board uses just the Hatch voice session; the project's main/
+    # The Voice PE board uses just the Muse voice session; the project's main/
     # voice_muse_chat.c stands in for the Muse settings, Wi-Fi and Link hooks.
     list(APPEND srcs "muse_chat.c" "muse_account_api.c" "muse_chat_session.cpp" "muse_chat_text.c" "muse_text.c")
     # The shared session handles option events even without a touchscreen.

@@ -14,6 +14,43 @@
 
 menu "Muse"
 
+    config MUSE_UI_THEME
+        bool "Light and dark appearance"
+        depends on MUSE_ENABLED && !MUSE_UI_FREEINK
+        default n
+        help
+            Adds Automatic, Dark and Light appearance choices to Settings.
+            Automatic uses an optional content-background hint and otherwise
+            keeps the existing dark appearance. No avatar feature is needed.
+
+    config MUSE_AVATAR_SYNC
+        bool "Sync the paired Muse avatar (experimental)"
+        depends on MUSE_ENABLED && SPIRAM && !MUSE_UI_FREEINK
+        depends on HOMEHUB_DAEMON_REQUESTS
+        default n
+        help
+            Adds an optional My Muse avatar source. Built-in remains the
+            default and can be selected without restarting. Requires PSRAM
+            for bounded image decoding. Initially validated on the 1.75C.
+
+    config MUSE_AVATAR_ANIMATIONS
+        bool "Experimental phone-avatar clip playback"
+        depends on MUSE_AVATAR_SYNC && IDF_TARGET_ESP32S3
+        default n
+        help
+            Adds bounded local H.264 clip packs to My Muse, rendered in the
+            existing home canvas. Requires conversion of phone MP4 assets.
+            Missing interactive clips keep the personal image with local
+            feedback. This does not provide a personal face or mouth rig.
+            No camera view, Wi-Fi listener, or video transport is enabled.
+
+    # Always present in sdkconfig.json, including when the bool is disabled.
+    # The component manager resolves manifests before all managed Kconfigs.
+    config MUSE_AVATAR_DEPS
+        string
+        default "y" if MUSE_AVATAR_SYNC
+        default "n"
+
     config MUSE_LATEST_REPLY
         bool "Latest reply screen"
         depends on MUSE_BOARD_WAVESHARE_S3_175C && SPIRAM && MUSE_HATCH
@@ -160,6 +197,10 @@ menu "Muse"
             bool "M5Stack CoreS3 (ESP32-S3, 320x240 touch LCD, speaker and microphones)"
             depends on IDF_TARGET_ESP32S3
 
+        config MUSE_BOARD_M5STACK_CORES3LITE
+            bool "M5Stack CoreS3 Lite (ESP32-S3, 320x240 touch LCD, speaker and microphones)"
+            depends on IDF_TARGET_ESP32S3
+
         config MUSE_BOARD_M5STACK_CORE2
             bool "M5Stack Core2 v1.0 (ESP32, touch LCD, touch-strip talk)"
             depends on IDF_TARGET_ESP32
@@ -224,6 +265,17 @@ menu "Muse"
             The StopWatch and the TriviaPOD: one board file
             (board_m5stack_stopwatch.c) and the StopWatch's controls.
 
+    config MUSE_MOTION_GESTURES
+        bool "Lift to wake and face-down quiet (1.75C)"
+        depends on MUSE_BOARD_WAVESHARE_S3_175C
+        default n
+        help
+            Adds opt-in motion controls to Settings > Auto-sleep. Both start
+            off. Uses the QMI8658 accelerometer at low-power 21 Hz with the
+            gyroscope disabled. Lift wake polls at 20 Hz; quiet-only uses
+            10 Hz awake and 4 Hz asleep. Battery use increases. Does not
+            wake from a full power-off.
+
     config MUSE_ENABLED
         bool
         default y if !MUSE_BOARD_NONE
@@ -264,6 +316,7 @@ menu "Muse"
         default "m5stack_triviapod" if MUSE_BOARD_M5STACK_TRIVIAPOD
         default "seeed_xiao_s3_147" if MUSE_BOARD_SEEED_XIAO_S3_147
         default "m5stack_cores3" if MUSE_BOARD_M5STACK_CORES3
+        default "m5stack_cores3lite" if MUSE_BOARD_M5STACK_CORES3LITE
         default "m5stack_core2" if MUSE_BOARD_M5STACK_CORE2
         default "fnk0104b" if MUSE_BOARD_FNK0104B
         default "guition_jc3248w535" if MUSE_BOARD_GUITION_JC3248W535
@@ -342,6 +395,19 @@ menu "Muse"
             memory and preview decoding shares CPU time with voice and Link.
             Leave disabled to build without camera support.
 
+    config MUSE_PHOTO_NOTES
+        bool "Photo with voice notes"
+        depends on MUSE_WATCHER_CAMERA && MUSE_HATCH
+        default y
+        help
+            Adds "Photo with voice notes" to Settings, off until the person
+            turns it on. Then holding the talk button for a voice note also
+            takes a photo at the press, shows TAKING A PHOTO, and sends the
+            photo after the note's audio, in the same message. Only the
+            person's own press takes one this way (not a wake word note), and
+            the photo isn't kept once it has gone up. Another camera board
+            adds its capture to muse_photo_note.c and to this dependency.
+
     config MUSE_P4_CSI_CAMERA
         bool "ESP32-P4 MIPI-CSI camera capture"
         depends on MUSE_BOARD_WAVESHARE_P4_LCD35 && SPIRAM
@@ -401,6 +467,20 @@ menu "Muse"
             shows in GNU Unifont's 8x16 bitmaps, the whole caption in that
             one font. Small screens show such a caption one 16 px line at a
             time. Takes about 10 KB of flash and no RAM.
+
+    config MUSE_EMOJI
+        bool "Show emoji in captions"
+        depends on MUSE_ENABLED && !MUSE_UI_FREEINK
+        default n
+        help
+            Without it, captions drop emoji. With it, screens whose captions
+            use the 16 px caption font (the round and larger ones, such as
+            the SenseCAP Watcher) show 190 of the emoji most common in
+            replies in colour: Twemoji's, scaled to 16 px, two caption cells
+            wide. Others still go, as do skin tones and anything joined to
+            an emoji with U+200D. Small screens, whose captions are 8 px
+            text, keep dropping them. Takes about 150 KB of flash and 48
+            bytes of RAM.
 
     choice MUSE_UI_LANGUAGE
         prompt "Language of the screen's own text"
@@ -492,9 +572,10 @@ menu "Muse"
             in a band along the bottom. With this on, the avatar steps aside
             while Muse thinks or answers, and the reply fills the screen
             below the status line. Muse comes back when the reply ends.
-            On boards with the two-button menu, the menu gains a Text size
-            setting (Small, Medium, Large) for the reply's font, kept across
-            restarts; touch boards have no such control and keep Medium.
+            The reply's font follows the Text size setting (Extra small to
+            Extra large, kept across restarts): in the menu on boards with
+            the two-button menu, under Brightness in Settings on touch
+            boards. Until it's set, replies are Small (Montserrat 14).
             Lines wrap to the screen's width in pixels, so every page fits
             at any size. A page with Chinese, Japanese or Korean in it
             (MUSE_CJK_FONT) or accented letters (MUSE_LATIN_FONT) shows in
@@ -523,6 +604,43 @@ menu "Muse"
             a short two-note ping plays first. For boards without a vibration
             motor (the SenseCAP Watcher), so a reply is noticed with the
             device out of hand.
+
+    config MUSE_RESEND_NOTES
+        bool "Keep sending a voice note until Muse has it"
+        depends on MUSE_HATCH
+        default n
+        help
+            Changes how voice notes that didn't reach Muse are kept in PSRAM
+            and sent again. Without it, up to 4 wait, each is tried up to 8
+            times with the wait doubling from 15 s to 2 minutes, and a press
+            is refused while 4 wait. With it, up to MUSE_RESEND_NOTES_MAX
+            notes in MUSE_RESEND_NOTES_KB of PSRAM wait, and a new one
+            drops the oldest to make room. Each is tried again after 5, 15
+            and 30 s, then every 60 s, oldest first, until Muse has it. The
+            screen says SAVED, WILL TRY AGAIN once; later tries show
+            nothing until the note lands, and then its reply plays (asleep,
+            the reply waits in the Muse app, as before).
+
+            A note Muse refused (an HTTP 4xx other than 408 or 429) isn't
+            sent again. Neither is one that went up whole without Muse
+            acknowledging it: the chat has no way to tell a repeat, and
+            Muse may have it already, so the screen says to check the Muse
+            app. Kept notes are in RAM only, and a restart loses them.
+
+    config MUSE_RESEND_NOTES_MAX
+        int "Voice notes kept to send again"
+        depends on MUSE_RESEND_NOTES
+        range 1 8
+        default 6
+
+    config MUSE_RESEND_NOTES_KB
+        int "PSRAM for voice notes kept to send again (KB)"
+        depends on MUSE_RESEND_NOTES
+        range 512 4096
+        default 1536
+        help
+            A second of a note takes about 31 KB, so the longest, 15
+            seconds, takes 469 KB.
 
     config MUSE_REALTIME_VOICE
         bool "Live voice calls with Muse (experimental)"

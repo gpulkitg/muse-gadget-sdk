@@ -171,6 +171,11 @@ void muse_settings_set_speaker_on(bool on)
     sim_services_set_speaker(on);
 }
 
+/* Text size: the screen's default until someone picks one, as on a board. */
+static int s_text_default = MUSE_TEXT_SMALL;
+int muse_settings_text_size(void) { return s_text_default; }
+void muse_settings_set_text_size_default(int size) { s_text_default = size; }
+
 void muse_wifi_status(muse_wifi_status_t *out)
 {
     if (out) {
@@ -273,3 +278,9 @@ void sim_services_set_call(bool on)
 {
     s_in_call = on;
 }
+
+#if CONFIG_MUSE_UI_THEME
+static muse_theme_mode_t s_ui_theme;
+muse_theme_mode_t muse_settings_theme(void) {return s_ui_theme;}
+esp_err_t muse_settings_set_theme(muse_theme_mode_t mode) {s_ui_theme=mode;return ESP_OK;}
+#endif

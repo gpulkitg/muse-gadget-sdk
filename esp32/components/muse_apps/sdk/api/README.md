@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-# The apps API, version 1.1 (draft)
+# The apps API, version 1.2 (draft)
 
 `api.json` defines the API WebAssembly apps get on a gadget: every function
 with its arguments and WAMR signature, the events, the constants, the LVGL
@@ -24,7 +24,7 @@ describes those itself (below). Everything else here is generated from it:
 
 | File | What it is |
 |---|---|
-| `../gadget.h` | The header apps include (in `apps/`, beside `build.py`) |
+| `../gadget.h` | The header apps include (in `sdk/`, beside `build.py`) |
 | `REFERENCE.md` | The reference, for people and for Muse |
 | `../../muse_apps_api.h` | The firmware's tables: imports with their signatures and permissions, widgets, properties, well-known devices |
 | `api.capabilities.json` | `api.json` without the prose (about 12 KB), for `app.api` to serve |
@@ -37,7 +37,7 @@ example to check that the header's imports match the signatures. Then run
 `python3 components/muse_apps/sdk/muse_brief.py`: `components/muse_apps/sdk/MUSE.md`, the guide Muse gets, carries
 `gadget.h` whole.
 
-The firmware serves 1.1 (`components/muse_apps`, built with `MUSE_APPS=1`;
+The firmware serves 1.2 (`components/muse_apps`, built with `MUSE_APPS=1`;
 [component instructions](../../AGENTS.md)). It replaced API version 0,
 whose immediate-mode canvas and raw VM requests are gone.
 

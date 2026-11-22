@@ -15,6 +15,7 @@
  */
 
 #include "image_fetch.h"
+#include "vm_file_path.h"
 #include "led_status.h"
 #include "noise_control.h"
 #include "sdkconfig.h"
@@ -162,6 +163,9 @@ typedef struct {
 #define TOP_ROW(f) (CENTRED(f) ? 0 : (f)->row)
 
 static atomic_bool s_busy;
+#if CONFIG_MUSE_AVATAR_SYNC
+bool image_fetch_busy(void) { return atomic_load(&s_busy); }
+#endif
 // Bands downloads have drawn, ever: see image_fetch_drawn().
 static atomic_uint s_bands_drawn;
 
@@ -298,6 +302,7 @@ static UINT jpeg_out(JDEC *jd, void *bitmap, JRECT *rect) {
     int w = rect->right - rect->left + 1;
     int h = rect->bottom - rect->top + 1;
     const uint8_t *rgb = bitmap;
+    if (w <= 0 || h <= 0 || w * h > JPEG_MCU_PIXELS) return 0;
     for (int i = 0; i < w * h; i++, rgb += 3) {
         uint16_t px = ((rgb[0] & 0xF8) << 8) | ((rgb[1] & 0xFC) << 3) | (rgb[2] >> 3);
         f->mcu[i] = (uint16_t)((px >> 8) | (px << 8));
@@ -309,7 +314,9 @@ static const char *draw_jpeg(fetch_t *f, int *out_w, int *out_h, int *out_scale)
     void *pool = malloc(JPEG_POOL_BYTES);
     if (!pool) return "out of memory";
     const char *err = NULL;
-    JDEC jd;
+    // The ROM decoder doesn't clear this, and a JPEG with no SOF0 would
+    // otherwise decode with whatever MCU size was on the stack.
+    JDEC jd = {0};
     JRESULT rc = jd_prepare(&jd, jpeg_in, pool, JPEG_POOL_BYTES, f);
     if (rc == JDR_OK) {
         // Shrink by the smallest power of two that fits below `row`.
@@ -853,25 +860,7 @@ static void fetch_task(void *arg) {
 
 // GET /fs/raw/ and the path, without its leading slashes, percent-encoded
 // but for its slashes. NULL if out of memory.
-static char *vm_request_path(const char *path) {
-    while (*path == '/') path++;
-    size_t prefix = strlen(VM_PATH_PREFIX);
-    char *out = malloc(prefix + strlen(path) * 3 + 1);
-    if (!out) return NULL;
-    memcpy(out, VM_PATH_PREFIX, prefix);
-    char *p = out + prefix;
-    for (const unsigned char *c = (const unsigned char *)path; *c; c++) {
-        if (isalnum(*c) || strchr("-._~/", *c)) {
-            *p++ = (char)*c;
-        } else {
-            *p++ = '%';
-            *p++ = "0123456789ABCDEF"[*c >> 4];
-            *p++ = "0123456789ABCDEF"[*c & 15];
-        }
-    }
-    *p = '\0';
-    return out;
-}
+static char *vm_request_path(const char *path) { return vm_file_request_path(path); }
 
 // Allocate the largest safe range once. Future allocations must leave Noise's
 // TX margin: the task stack, either decoder or raw rows, and the queued GET.

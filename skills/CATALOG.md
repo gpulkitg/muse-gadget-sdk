@@ -1,6 +1,6 @@
 # Skill Catalog
 
-61 active skills: 59 device/family skills, one shared Google Cast skill, and one Linux wake-word setup skill.
+63 active skills: 61 device/family skills, one shared Google Cast skill, and one Linux wake-word setup skill.
 Use the matching device skill for model compatibility, setup, safety and supported operations.
 
 ## Gadget setup
@@ -57,6 +57,7 @@ Use the matching device skill for model compatibility, setup, safety and support
 - [Moonraker 3D printers](gadget-moonraker-3d-printers/SKILL.md) — existing-service status and print/job controls.
 - [Bambu Lab printers](gadget-bambu-lab-printers/SKILL.md) — local status, filament, P2S chamber-camera snapshots and monitoring, and owner-approved prints in Developer Mode.
 - [HomeWhiz laundry](gadget-homewhiz-laundry/SKILL.md) — cloud only; needs internet and a HomeWhiz account: washer and dryer cycle state, read-only.
+- [Pentair IntelliCenter](gadget-pentair-intellicenter/SKILL.md) — read-only pool and spa status over the controller's local TCP interface: temperatures, heating, pumps, freeze protection and chemistry.
 - [VeSync purifiers](gadget-vesync-purifier/SKILL.md) — cloud only; needs internet and a VeSync account: Levoit purifier power, mode, fan level and filter life, guarded per exact model.
 
 ## Vacuums
@@ -82,6 +83,7 @@ Use the matching device skill for model compatibility, setup, safety and support
 
 - [NUT UPS](gadget-nut-ups/SKILL.md) — read-only UPS and battery status from a Network UPS Tools upsd server, using upsc on a Linux gadget.
 - [UniFi Network consoles](gadget-unifi-network-consoles/SKILL.md) — local inventory and status.
+- [UPnP internet gateways](gadget-upnp-internet-gateways/SKILL.md) — read-only WAN link status, connection uptime and traffic counters from a router with UPnP turned on.
 - [Wyze RTSP cameras](gadget-wyze-rtsp-cameras/SKILL.md) — viewing/capture with compatible legacy firmware already installed.
 - [yi-hack cameras](gadget-yi-hack-cameras/SKILL.md) — snapshots/TCP streams with compatible firmware already installed.
 

@@ -36,12 +36,14 @@
 #if CONFIG_MUSE_ENABLED
 #include "muse_link.h"
 #endif
+#include "token_fp.h"
 
 // The chip's own USB port, where it has one and the log goes to it.
 #define USJ_CONSOLE (SOC_USB_SERIAL_JTAG_SUPPORTED && \
                      (CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG || CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG))
 #if USJ_CONSOLE
 #include "driver/usb_serial_jtag.h"
+#include "hal/usb_serial_jtag_ll.h"
 #endif
 
 static const char *TAG = "link.sdk_token";
@@ -125,7 +127,8 @@ bool sdk_token_console_command(const char *line) {
         fflush(stdout);
         return true;
     }
-    ESP_LOGI(TAG, "stored SDK token %.12s, restarting to use it", token);
+    char fp[TOKEN_FP_TEXT_LEN];
+    ESP_LOGI(TAG, "stored the SDK token (%s), restarting to use it", token_fp_text(token, fp));
     printf("@sdk_token ok\n");
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(500));   // let the answer reach the host
@@ -192,6 +195,12 @@ void sdk_token_console_start(void) {
     }
 #endif
 #if USJ_CONSOLE
+    // Firmware flashed before this one can leave the port's interrupts on,
+    // and they outlast a reset: M5Stack's CoreMatrix factory firmware leaves
+    // the 1 ms start-of-frame one on, which the driver doesn't handle, so its
+    // handler would run without end and stop the boot. The driver turns on
+    // the ones it uses.
+    usb_serial_jtag_ll_disable_intr_mask(USB_SERIAL_JTAG_LL_INTR_MASK);
     usb_serial_jtag_driver_config_t cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     cfg.rx_buffer_size = COMMAND_LINE_MAX;
     if (usb_serial_jtag_driver_install(&cfg) == ESP_OK) {

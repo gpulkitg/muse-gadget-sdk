@@ -24,7 +24,7 @@ How to build this firmware and flash it onto your own ESP32 board. See
 The ESP32 Device SDK: the ESP-IDF firmware (`muse-gadget`) powering Muse
 Home Link. It pairs with a phone over BLE, joins Wi-Fi, and holds an encrypted
 Noise session to a VM, with an optional home-network tunnel. `main/main.c` is the entry
-point and `main/app.c` holds most of the logic. `components/muse` adds a
+point and `main/app.c` holds most of the logic. `components/muse` adds an
 avatar/voice/settings UI on boards with a display.
 
 ## Prerequisites
@@ -52,11 +52,13 @@ before adding a feature to one.
 | Waveshare ESP32-C6-LCD-1.47 | `esp32c6` | `devices/sdkconfig.waveshare-c6-lcd-147` | `tools/board.sh waveshare-c6-lcd-147` |
 | ESP32-2432S028 Cheap Yellow Display (experimental) | `esp32` | `devices/sdkconfig.esp32-2432s028` | `tools/board.sh esp32-2432s028` |
 | ESP32-C3 with 0.42" OLED | `esp32c3` | `devices/sdkconfig.c3-oled-042` | `tools/board.sh c3-oled-042` |
+| M5Stack CoreMatrix | `esp32c61` | `devices/sdkconfig.m5stack-corematrix` | `tools/board.sh m5stack-corematrix` |
 | Waveshare ESP32-S3-1.54inch-ePaper V2 | `esp32s3` | `devices/sdkconfig.waveshare-s3-epaper-154` | `tools/board.sh waveshare-s3-epaper-154` |
 | Waveshare ESP32-S3-ePaper-1.54G | `esp32s3` | `devices/sdkconfig.waveshare-s3-epaper-154g` | `tools/board.sh waveshare-s3-epaper-154g` |
 | Seeed SenseCAP Indicator | `esp32s3` | `devices/sdkconfig.sensecap-indicator` | `tools/board.sh sensecap-indicator` |
 | Seeed reTerminal E1001 | `esp32s3` | `devices/sdkconfig.reterminal-e1001` | `tools/board.sh reterminal-e1001` |
 | Seeed reTerminal E1002 | `esp32s3` | `devices/sdkconfig.reterminal-e1002` | `tools/board.sh reterminal-e1002` |
+| Seeed reTerminal E1003 | `esp32s3` | `devices/sdkconfig.reterminal-e1003` | `tools/board.sh reterminal-e1003` |
 | Seeed reTerminal Sticky (experimental) | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.reterminal-sticky` | `tools/board.sh reterminal-sticky` |
 | Seeed reTerminal Sticky Link status (experimental) | `esp32s3` | `devices/sdkconfig.reterminal-sticky-link` | `tools/board.sh reterminal-sticky-link` |
 | Home Assistant Voice Preview Edition | `esp32s3` | `devices/sdkconfig.home-assistant-voice` | `tools/board.sh home-assistant-voice` |
@@ -65,6 +67,7 @@ before adding a feature to one.
 | Waveshare ESP32-S3-Touch-AMOLED-1.75C | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-s3-175c` | manual (below) |
 | Waveshare ESP32-S3-Touch-AMOLED-1.75 | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-s3-175` | manual (below) |
 | Waveshare ESP32-S3-Touch-LCD-1.85B | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-s3-185b` | `tools/muse/board.sh build 185b` |
+| Waveshare ESP32-S3-Touch-LCD-1.85C | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-s3-185c` | `tools/muse/board.sh build 185c` |
 | Waveshare ESP32-S3-Touch-LCD-1.9 | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-s3-lcd19` | `tools/muse/board.sh build lcd19` |
 | Waveshare ESP32-S3-Touch-AMOLED-2.16 | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-s3-216` | `tools/muse/board.sh build s3-216` |
 | Waveshare ESP32-S3-Touch-AMOLED-1.43C | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-s3-143c` | `tools/muse/board.sh build 143c` |
@@ -87,6 +90,7 @@ before adding a feature to one.
 | M5Stack TriviaPOD (experimental) | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-m5stack-triviapod` | `tools/muse/board.sh build triviapod` |
 | Seeed XIAO ESP32-S3 1.47 Touch Display | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-seeed-xiao-s3-147` | `tools/muse/board.sh build xiao147` |
 | M5Stack CoreS3 | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-m5stack-cores3` | `tools/muse/board.sh build cores3` |
+| M5Stack CoreS3 Lite | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-m5stack-cores3lite` | `tools/muse/board.sh build cores3lite` |
 | Freenove FNK0104B | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-fnk0104b` | `tools/muse/board.sh build fnk0104b` |
 | VN ESP32-S3 1.83-inch NV3023 | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-vn-s3-183` | `tools/muse/board.sh build vn183` |
 | Guition JC3248W535 | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-guition-jc3248w535` | `tools/muse/board.sh build jc3248w535` |
@@ -186,7 +190,7 @@ controls and unverified hardware behavior.
 
 ### Boards with the full UI, by hand
 
-`tools/muse/board.sh build|flash <s3|s3n|s3-18|s3-216|s3-206|185b|143c|143|146|lilygo175|aipi|atk-box|atk-box2|box3|c6|c6-206|watcher|sticks3|crowpanel-43|plus2|cardputer-adv|atoms3|stopwatch|triviapod|xiao147|cores3|core2|jc3248w535|lcd7|lcd128|lcd349|spotpear|vn183|ai-passport|echoear|p4lcd35|rorolee|lcd19|smartring-plus|s3lcd35|k10> [SERIAL|PORT]`
+`tools/muse/board.sh build|flash <s3|s3n|s3-18|s3-216|s3-206|185b|185c|143c|143|146|lilygo175|mosaico|aipi|atk-box|atk-box2|box3|c6|c6-206|watcher|sticks3|crowpanel-43|plus2|cardputer-adv|atoms3|stopwatch|triviapod|xiao147|cores3|cores3lite|core2|fnk0104b|jc3248w535|lcd7|lcd128|lcd349|spotpear|vn183|ai-passport|echoear|p4lcd35|rorolee|lcd19|smartring-plus|s3lcd35|k10> [SERIAL|PORT]`
 builds one board in `build-muse-<profile>/`, logs to
 `/tmp/muse_build_<board>.log`, and clears `managed_components/` before and
 after so it doesn't clash with other boards. When flashing, it finds the
@@ -227,6 +231,10 @@ more, except the StickS3, StickC Plus2, Cardputer ADV, AtomS3, AI Passport and W
 On the Watcher, rotation opens and pages through the latest reply. A short
 wheel click sleeps/wakes; a 300 ms hold starts push-to-talk. Pairing still
 confirms on the initial press, never on a hold's push-to-talk.
+With the camera built in (`CONFIG_MUSE_PHOTO_NOTES`) and Photo with voice
+notes turned on in Settings, that hold also takes a photo, which
+`muse_photo_note.c` sends with the note (`muse_chat_attach_jpeg()`); see
+`devices/README.md`.
 `muse_review.c` keeps up to 32 KB of the reply in PSRAM across the end of the
 turn. `>review.next`, `>review.prev`, and `>review.close` exercise navigation
 over the serial console.
@@ -290,10 +298,12 @@ flash size and status backend.
 
    | Descriptor | Board |
    |---|---|
-   | Espressif `303a:1001`, "USB JTAG/serial debug unit" | the chip's own USB: C3, C5, C6, S3 and the S3 boards with the full UI. Its serial number is the MAC |
+   | Espressif `303a:1001`, "USB JTAG/serial debug unit" | the chip's own USB: C3, C5, C6, C61, S3 and the S3 boards with the full UI. Its serial number is the MAC |
+   | Espressif `303a:8120` | M5Stack AtomS3 still running its stock UiFlow firmware |
    | CH340 (`1a86:7523`) | ideaspark, CYD, SenseCAP Indicator, reTerminal E1001 and E1002 |
    | CH340 (`1a86:7522`) | Elecrow CrowPanel Advance 4.3 V1.3 |
-   | CH9102 | M5Stack StickC Plus2 |
+   | CH9102 | M5Stack StickC Plus2, or an M5Stack Core2 |
+   | CP2104 (`10c4:ea60`) | M5Stack Core2 (it shipped with either bridge) |
    | CH343 (`1a86:55d3`), "USB Single Serial" | Seeed reTerminal Sticky, Waveshare ESP32-S3-Touch-LCD-7, ESP32-S3-Touch-LCD-1.28 or ESP32-P4-WIFI6-Touch-LCD-3.5: `chip-id` and `flash-id` tell them apart (the P4 is an `esp32p4`; 8 MB of PSRAM on the Sticky and the 7-inch, 2 MB on the 1.28-inch; 32 MB of flash on the Sticky, which `flash-id` shows) |
    | CH342, two `usbmodem` ports | SenseCAP Watcher: the S3 console is the one ending in `3`, the other is the Himax camera |
 
@@ -306,7 +316,8 @@ flash size and status backend.
    The target narrows it a long way: `esp32c5` is the DevKitC-1, `esp32c6` the
    Waveshare C6 or a C6 devkit, `esp32c3` the AI Passport or the C3 with a
    0.42" OLED (`flash-id`: 8 MB on the AI Passport, 4 MB on the OLED board),
-   `esp32` the ideaspark, the CYD or the StickC Plus2.
+   `esp32c61` the CoreMatrix, `esp32` the ideaspark, the CYD, the StickC Plus2
+   or the Core2.
 
 4. **Fall back to a read-only capture.** If the board is mid-run and you can't
    write to the port, the `## Monitor` recipe below reads it without resetting,
@@ -317,14 +328,24 @@ flash size and status backend.
    |---|---|
    | `top-right`, or `top-left` with live calls (`yellow` on older firmware) | M5Stack StopWatch or TriviaPOD — tell them apart by the `muse: board:` line a reset logs |
    | `USR1` | Seeed XIAO ESP32-S3 1.47 Touch Display |
-   | `power` | M5Stack CoreS3 |
+   | `power` | M5Stack CoreS3, CoreS3 Lite |
    | `M`, `R`, `L` or `Q` | ALIENTEK ATK-DNESP32S3-BOX2 |
-   | `front` | M5Stack StickS3, or StickC Plus2 — tell them apart by the port: the StickS3 is native USB, the Plus2 is a CH9102 `usbserial` |
+   | `front` | M5Stack StickS3, AtomS3 or StickC Plus2 — the Plus2 is a CH9102 `usbserial`; tell the StickS3 and AtomS3 apart by the `muse: board:` line a reset logs |
    | `top` | Waveshare ESP32-S3-Touch-AMOLED-1.75C |
    | `key` | Waveshare ESP32-S3-Touch-AMOLED-2.16 |
    | `bottom right` | AIPI Lite |
    | `wheel` | Seeed SenseCAP Watcher |
-   | `boot` | Waveshare ESP32-C6-Touch-AMOLED-1.8, the ESP32-S3-Touch-AMOLED-1.75, 1.8, 2.06, 1.43C or 1.43, the LilyGO T-Display-S3 AMOLED 1.75, the Elecrow CrowPanel Advance 4.3, the Guition JC3248W535, the Waveshare ESP32-S3-Touch-LCD-1.85B or 3.49, the VN ESP32-S3 1.83-inch NV3023, the Deotaland RoRoLee, the Waveshare ESP32-S3-Touch-LCD-1.9, the Waveshare ESP32-S3-Touch-LCD-3.5 or the SpotPear ESP32-AI-1.28 v1.0 — tell the C6 by its target (`esp32c6`), and the S3 boards by the `muse: board:` line a reset logs |
+   | `boot` | Waveshare ESP32-C6-Touch-AMOLED-1.8 or 2.06, the ESP32-S3-Touch-AMOLED-1.75, 1.8, 2.06, 1.43C or 1.43, the LilyGO T-Display-S3 AMOLED 1.75, the Elecrow CrowPanel Advance 4.3, the Guition JC3248W535, the Waveshare ESP32-S3-Touch-LCD-1.85B or 3.49, the VN ESP32-S3 1.83-inch NV3023, the Deotaland RoRoLee, the Waveshare ESP32-S3-Touch-LCD-1.9, the Waveshare ESP32-S3-Touch-LCD-3.5, the Espressif ESP32-S3-BOX-3, the Freenove FNK0104B or the SpotPear ESP32-AI-1.28 v1.0 — tell the C6 boards by their target (`esp32c6`), and each board by the `muse: board:` line a reset logs |
+   | `BOOT` | Waveshare ESP32-S3-Touch-LCD-1.46 or 1.85C, or the Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 — tell the P4 by its target (`esp32p4`), and the S3 boards by the `muse: board:` line a reset logs |
+   | `screen` | Waveshare ESP32-S3-Touch-LCD-7 or ESP32-S3-Touch-LCD-1.28 — tell them apart by the `muse: board:` line a reset logs |
+   | `screen microphone` | OSTB EchoEar-2ST or VIEWE SmartRing-Plus — tell them apart by the `muse: board:` line a reset logs |
+   | `middle` | M5Stack Core2 |
+   | `ok` | FoloToy AI Passport |
+   | `ai` | Espressif ESP-Mosaico |
+   | `K0` | ALIENTEK ATK-DNESP32S3-BOX |
+   | `A` | DFRobot UNIHIKER K10 |
+   | `GO/space` | M5Stack Cardputer ADV |
+   | `AI button` | Seeed reTerminal Sticky |
 
 Ask the user only when these come up empty or contradict each other, and say
 what you found and what's ambiguous rather than asking from scratch.
@@ -447,7 +468,7 @@ kind of failure it was:
 - **2**: no board, or it can't do this (or another `avatar.py` is still
   running: let it finish). If it says the board doesn't answer,
   rerun with `--board s3` or `--board aipi` (from the board's name, or ask) to
-  flash firmware that can. On the C6 boards or Watcher, follow the manual steps in
+  flash firmware that can. On the C6 boards, follow the manual steps in
   `tools/muse/AVATAR_RECIPE.md`.
 - **3**: the board isn't on Wi-Fi, or it isn't paired in the Muse app and has
   no device token, so their Muse isn't connected. Tell them, and point them to
@@ -473,6 +494,7 @@ Third-party code keeps its upstream license and header: `minimp3.h` (CC0),
 `components/muse/boards/waveshare_s3_185b_init.h` (Apache-2.0, Waveshare),
 `components/esp_lcd_gc9107` (Apache-2.0, Espressif),
 `main/epd_ssd1677.c` (MIT, Seeed-reTerminal-E10xx-Firmware),
+`main/epd_it8951.c` (MIT, Seeed_GFX2),
 `components/tinyh264/src` (Apache-2.0, the Android Open Source Project) and
 `components/libvpx_vp8/src` (BSD-3-Clause and `PATENTS`, the WebM Project).
 Each third-party file is listed under License in `README.md` and the root
@@ -514,7 +536,7 @@ physical talk/setup button, so the GPIO button reset gesture does not apply.
 The VIEWE SmartRing-Plus works the same way; its BOOT button is inside the case.
 
 The device advertises as `MuseGadget-XXXXXX` (`MuseGadget-Disp-XXXXXX` on the
-ideaspark, CYD, SenseCAP Indicator, Waveshare S3 LCD 3.5 status-screen and reTerminal E1001 and E1002 overlays, `MuseGadget-ha-voice-XXXXXX` on the
+ideaspark, CYD, SenseCAP Indicator, Waveshare S3 LCD 3.5 status-screen, Waveshare S3 ePaper 1.54 and 1.54G, reTerminal E1001, E1002 and E1003, and both reTerminal Sticky overlays, `MuseGadget-ha-voice-XXXXXX` on the
 Voice PE, `MuseGadget-respeaker-XXXXXX` on the reSpeaker Lite,
 `MuseGadget-xvf3800-XXXXXX` on the reSpeaker XVF3800,
 `MuseGadget-Oled-XXXXXX` on the ESP32-C3 OLED, which shows the status as words). Its
@@ -883,6 +905,21 @@ For app authoring and the guide to send Muse, see
   takes about 19 KB of internal RAM (8-bit GHASH tables and the PSRAM staging
   buffer; see its Kconfig help). Turn it off to compare against IDF's;
   `tests/test_ghash32.py` checks the tables and its failure handling.
+- The tunnel relays broadcast and multicast UDP between the VM and the LAN,
+  takes the VM's `net.forward` (`CONFIG_HOMEHUB_NET_FORWARD`, default on) and
+  reports the station's address in `link.register` (`main/tunnel_relay.c`,
+  `docs/home-link-network.md`, which is the behavior the VM side builds on).
+  NAPT's idle UDP time is
+  `CONFIG_HOMEHUB_TUNNEL_UDP_IDLE_S`, which `main/CMakeLists.txt` compiles
+  into ESP-IDF's lwIP, along with a 64-entry ARP table for `device.discover`
+  (1,296 bytes of internal RAM) and an input hook
+  (`main/lwip_hooks/tunnel_napt_guard.h`) that drops packets too short for
+  NAPT's rewrite, packets from the LAN for the tunnel's subnet, and TCP for a
+  TCP forward from outside the station's subnet. They rely
+  on lwIP's own defaults and the hook's place before NAPT, so they're checked
+  on ESP-IDF v6.0.x only, and the longer UDP time comes only with the hook: on
+  another version the build warns and lwIP keeps its 2 s, its 10 entries and
+  no check.
 - Don't move offsets in `partitions.csv`. `prod_data` and `prod_bak` are fixed
   manufacturing locations, and the table offset of `0x10000` leaves room for a
   larger Secure Boot bootloader. Check the `check_sizes` line in the build

@@ -25,6 +25,7 @@
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
@@ -41,11 +42,15 @@
 #include "muse_console.h"
 #include "muse_link.h"
 #include "muse_mem.h"
+#include "muse_motion.h"
 #include "muse_menu.h"
 #if CONFIG_MUSE_MIRROR
 #include "muse_mirror.h"
 #endif
 #include "muse_settings.h"
+#if CONFIG_MUSE_UI_THEME
+#include "muse_theme.h"
+#endif
 #if !CONFIG_MUSE_UI_FREEINK
 #include "muse_settings_ui.h"   /* LVGL only; e-paper builds use FreeInk */
 #endif
@@ -137,6 +142,7 @@ void muse_input_clear_call_pending(uint32_t mark)
 }
 static bool s_cpu_low;      /* display stopped and the CPU allowed to sleep */
 static volatile bool s_power_off_requested;
+static volatile bool s_restart_requested;
 static bool s_cpu_pd;       /* muse_input_power_init() holds the CPU's retention memory */
 #if CONFIG_PM_ENABLE
 static esp_pm_lock_handle_t s_awake;   /* with s_cpu_pd: held whenever !s_cpu_low */
@@ -196,6 +202,19 @@ static void power_off(void)
     muse_voice_cancel_shutdown();
     muse_state_set_mode(MUSE_MODE_IDLE);
     muse_state_set_caption("COULDN'T POWER OFF");
+}
+
+static void restart(void)
+{
+    ESP_LOGI(TAG, "restarting");
+    muse_voice_shutdown(3000);   /* bounded best effort, as before a power-off */
+    muse_state_set_asleep(false);
+    update_power();
+    muse_state_set_progress(0);
+    muse_state_set_level(0);
+    muse_state_set_caption("RESTARTING...");
+    vTaskDelay(pdMS_TO_TICKS(GOODBYE_MS));
+    esp_restart();
 }
 
 static void set_asleep(bool asleep, const char *why)
@@ -717,6 +736,11 @@ static void input_task(void *arg)
     TickType_t powered = xTaskGetTickCount() - pdMS_TO_TICKS(POWER_MS);
 
     for (;;) {
+#if CONFIG_MUSE_MOTION_GESTURES
+        if (muse_motion_tick((uint32_t)(esp_timer_get_time() / 1000))) {
+            set_asleep(false, "lift");
+        }
+#endif
         unsigned ev = muse_board->poll_buttons() | atomic_exchange(&s_touch_talk_events, 0);
 #if CONFIG_MUSE_VIDEO
         /* Any press leaves the video view (its release then does nothing). */
@@ -774,6 +798,10 @@ static void input_task(void *arg)
             s_power_off_requested = false;
             power_off();
         }
+        if (s_restart_requested) {
+            s_restart_requested = false;
+            restart();
+        }
 
         TickType_t now = xTaskGetTickCount();
         if (now - checked >= pdMS_TO_TICKS(SLEEP_CHECK_MS)) {
@@ -797,7 +825,11 @@ static void input_task(void *arg)
          * noticed within REST_WAIT_MS. Napping, nothing comes over the
          * network; USB power arriving is noticed within NAP_WAIT_MS. */
         if (paused && muse_board->wait_buttons) {
-            muse_board->wait_buttons(napping ? NAP_WAIT_MS : REST_WAIT_MS);
+            int wait_ms = napping ? NAP_WAIT_MS : REST_WAIT_MS;
+#if CONFIG_MUSE_MOTION_GESTURES
+            if (muse_motion_active()) wait_ms = (int)muse_motion_poll_ms();
+#endif
+            muse_board->wait_buttons(wait_ms);
         } else {
             vTaskDelay(pdMS_TO_TICKS(paused ? REST_POLL_MS : POLL_MS));
         }
@@ -972,6 +1004,12 @@ static bool console_command(char *line, bool whole)
         }
         return true;
     }
+#if CONFIG_MUSE_MOTION_GESTURES
+    if (!strcmp(line, "motion")) {
+        muse_motion_status();
+        return true;
+    }
+#endif
     bool reset = !strcmp(line, "power.reset");
     if (reset || !strcmp(line, "power")) {
         if (reset) {
@@ -1021,6 +1059,13 @@ static bool console_command(char *line, bool whole)
         }
         return true;
     }
+#if CONFIG_MUSE_AVATAR_SYNC && CONFIG_MUSE_UI_THEME
+    if (!strncmp(line,"ui.settings.action=",19)) {
+        if (muse_settings_ui_bench_action(line+19)) muse_ui_bench_page(true);
+        else {printf("@ui.error settings action must be primary or back, with no action pending\n");fflush(stdout);}
+        return true;
+    }
+#endif
 #endif
 #if CONFIG_MUSE_WAKEWORD_ENABLE
     if (!strcmp(line, "wake") || !strcmp(line, "wake.on") || !strcmp(line, "wake.off")) {
@@ -1035,6 +1080,22 @@ static bool console_command(char *line, bool whole)
                (unsigned)st.wakes, (unsigned)st.cancels, (unsigned)st.submits,
                (unsigned)st.dropped_frames);
         fflush(stdout);
+        return true;
+    }
+#endif
+#if CONFIG_MUSE_UI_THEME
+    if (!strcmp(line,"theme") || !strncmp(line,"theme=",6)) {
+        if(line[5]=='=') {
+            const char *name=line+6;
+            if(!strcmp(name,"auto"))muse_theme_request_mode(MUSE_THEME_AUTO);
+            else if(!strcmp(name,"dark"))muse_theme_request_mode(MUSE_THEME_DARK);
+            else if(!strcmp(name,"light"))muse_theme_request_mode(MUSE_THEME_LIGHT);
+            else {printf("@theme error invalid\n");return true;}
+        }
+        static const char *const names[]={"auto","dark","light"};
+        uint32_t hint=muse_theme_hint();
+        printf("@theme {\"mode\":\"%s\",\"hint_valid\":%s,\"hint_rgb\":%u,\"save_error\":%d}\n",
+            names[muse_theme_mode()],(hint&0x1000000u)?"true":"false",(unsigned)(hint&0xffffff),muse_theme_save_error());
         return true;
     }
 #endif
@@ -1074,7 +1135,7 @@ static bool console_command(char *line, bool whole)
  * "power.reset" starts it over, "nap" sleeps and leaves Wi-Fi at once (as
  * two minutes asleep on battery would; 'w' rejoins), "face=" shows a face
  * (see set_face), "wake" prints the wake word state, "wake.on" and "wake.off"
- * toggle listening, and "chat=" sends a typed message to Hatch (see chat_line
+ * toggle listening, and "chat=" sends a typed message to Muse (see chat_line
  * and tools/muse/chat.py).
  */
 static void serial_task(void *arg)
@@ -1131,4 +1192,9 @@ esp_err_t muse_input_start(QueueHandle_t queue)
 void muse_input_request_power_off(void)
 {
     s_power_off_requested = true;
+}
+
+void muse_input_request_restart(void)
+{
+    s_restart_requested = true;
 }

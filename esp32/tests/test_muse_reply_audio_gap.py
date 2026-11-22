@@ -1,5 +1,17 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Run the production reply loop with audio gaps, resumption and interruption."""
 
 import os
@@ -113,7 +125,7 @@ int main(void) {
     for (scenario=0;scenario<3;scenario++) {
         step=0; now=1000000; progress=0; captions=0; silence_writes=0;
         bool delivered=false;
-        bool interrupted=hatch_reply(&delivered,false);
+        bool interrupted=hatch_reply(&delivered,"SENDING VOICE NOTE");
         assert(interrupted==(scenario==1));
         assert(!atomic_load(&s_reply_waiting));
         assert(silence_writes>=2 && captions>0);
